@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "uml_schema.json",
+  "title": "UmlDocument",
+  "description": "Unified UML JSON — the canonical intermediate representation for UMLFrame",
+  "type": "object",
+  "required": ["classes", "relationships"],
+  "additionalProperties": false,
+  "properties": {
+    "classes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/UmlClass" }
+    },
+    "relationships": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Relationship" }
+    }
+  },
+  "definitions": {
+    "Visibility": {
+      "type": "string",
+      "enum": ["public", "private", "protected", "package"]
+    },
+    "RelationshipType": {
+      "type": "string",
+      "enum": ["association", "aggregation", "composition", "inheritance", "dependency"]
+    },
+    "Parameter": {
+      "type": "object",
+      "required": ["name", "datatype"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "datatype": { "type": "string" }
+      }
+    },
+    "Attribute": {
+      "type": "object",
+      "required": ["name", "datatype", "visibility"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "datatype": { "type": "string" },
+        "visibility": { "$ref": "#/definitions/Visibility" },
+        "default_value": { "type": ["string", "null"], "default": null },
+        "static": { "type": "boolean", "default": false },
+        "final": { "type": "boolean", "default": false }
+      }
+    },
+    "Method": {
+      "type": "object",
+      "required": ["name", "visibility"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "visibility": { "$ref": "#/definitions/Visibility" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Parameter" },
+          "default": []
+        },
+        "return_type": { "type": "string", "default": "void" },
+        "static": { "type": "boolean", "default": false },
+        "abstract": { "type": "boolean", "default": false }
+      }
+    },
+    "Position": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "Size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "UmlClass": {
+      "type": "object",
+      "required": ["id", "name", "attributes", "methods", "position", "size"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^class_[0-9]+$",
+          "description": "Unique class identifier, e.g. class_1"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "attributes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Attribute" }
+        },
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Method" }
+        },
+        "position": { "$ref": "#/definitions/Position" },
+        "size": { "$ref": "#/definitions/Size" }
+      }
+    },
+    "Multiplicity": {
+      "type": "object",
+      "required": ["source", "destination"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "examples": ["1", "*", "0..1", "1..*"] },
+        "destination": { "type": "string", "examples": ["1", "*", "0..1", "1..*"] }
+      }
+    },
+    "Relationship": {
+      "type": "object",
+      "required": ["id", "source", "destination", "type", "multiplicity"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^rel_[0-9]+$",
+          "description": "Unique relationship identifier, e.g. rel_1"
+        },
+        "source": { "type": "string", "description": "ID of the source class" },
+        "destination": { "type": "string", "description": "ID of the destination class" },
+        "type": { "$ref": "#/definitions/RelationshipType" },
+        "multiplicity": { "$ref": "#/definitions/Multiplicity" },
+        "label": { "type": "string", "default": "" }
+      }
+    }
+  }
+}
