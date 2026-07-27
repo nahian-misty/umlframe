@@ -1,0 +1,44 @@
+{% if has_abstract %}
+from abc import ABC, abstractmethod
+{% endif %}
+{% if stdlib_imports %}
+{% for imp in stdlib_imports %}
+from {{ imp.module }} import {{ imp.name }}
+{% endfor %}
+{% endif %}
+{% if class_imports %}
+{% for imp in class_imports %}
+from .{{ imp }} import {{ imp }}
+{% endfor %}
+{% endif %}
+
+
+class {{ class_name }}{% if parent %}({{ parent }}){% elif has_abstract %}(ABC){% endif %}:
+{% for attr in static_attributes %}
+    {{ attr.prefixed_name }}: {{ attr.type }}{% if attr.default_value %} = {{ attr.default_value }}{% endif %}
+
+{% endfor %}
+    def __init__(self) -> None:
+{% if parent %}
+        super().__init__()
+{% endif %}
+{% if instance_attributes %}
+{% for attr in instance_attributes %}
+        self.{{ attr.prefixed_name }}: {{ attr.type }}{% if attr.default_value is not none %} = {{ attr.default_value }}{% else %} = None{% endif %}
+
+{% endfor %}
+{% else %}
+        pass
+{% endif %}
+
+{% for method in methods %}
+{% if method.static %}
+    @staticmethod
+{% endif %}
+{% if method.abstract %}
+    @abstractmethod
+{% endif %}
+    def {{ method.name }}({% if not method.static %}self{% if method.params %}, {% endif %}{% endif %}{{ method.params | join(', ') }}) -> {{ method.return_type }}:
+        ...
+
+{% endfor %}

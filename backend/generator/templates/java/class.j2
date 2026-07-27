@@ -1,0 +1,34 @@
+{% if package %}
+package {{ package }};
+
+{% endif %}
+{% if stdlib_imports %}
+{% for imp in stdlib_imports %}
+import {{ imp }};
+{% endfor %}
+
+{% endif %}
+{% if class_imports %}
+{% for imp in class_imports %}
+import {{ imp }};
+{% endfor %}
+
+{% endif %}
+public {% if has_abstract %}abstract {% endif %}class {{ class_name }}{% if parent %} extends {{ parent }}{% endif %} {
+{% if attributes %}
+
+{% for attr in attributes %}
+    {{ attr.visibility_keyword }} {% if attr.static %}static {% endif %}{% if attr.final %}final {% endif %}{{ attr.type }} {{ attr.name }}{% if attr.default_value %} = {{ attr.default_value }}{% endif %};
+{% endfor %}
+{% endif %}
+
+    public {{ class_name }}() {
+    }
+
+{% for method in methods %}
+    {{ method.visibility_keyword }} {% if method.static %}static {% endif %}{% if method.abstract %}abstract {% endif %}{{ method.return_type }} {{ method.name }}({{ method.params | join(', ') }}){% if method.abstract %};{% else %} {
+        throw new UnsupportedOperationException("Not implemented");
+    }{% endif %}
+
+{% endfor %}
+}

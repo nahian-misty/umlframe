@@ -1,0 +1,30 @@
+{% if class_imports %}
+{% for imp in class_imports %}
+import { {{ imp }} } from './{{ imp }}.js';
+{% endfor %}
+
+{% endif %}
+class {{ class_name }}{% if parent %} extends {{ parent }}{% endif %} {
+{% if attributes %}
+{% for attr in attributes %}
+    {{ attr.prefixed_name }}{% if attr.default_value %} = {{ attr.default_value }}{% else %} = null{% endif %};
+{% endfor %}
+
+{% endif %}
+    constructor() {
+{% if parent %}
+        super();
+{% else %}
+        // initialise fields above
+{% endif %}
+    }
+
+{% for method in methods %}
+    {{ 'static ' if method.static else '' }}{{ method.prefixed_name }}({{ method.params | join(', ') }}) {
+        throw new Error('Not implemented');
+    }
+
+{% endfor %}
+}
+
+export { {{ class_name }} };
