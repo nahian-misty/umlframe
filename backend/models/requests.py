@@ -24,3 +24,37 @@ class ReverseRequest(BaseModel):
 
 class JsonToMermaidRequest(BaseModel):
     document: UmlDocument
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def email_must_look_like_email(cls, v: str) -> str:
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class CreateProjectRequest(BaseModel):
+    name: str
+    document: UmlDocument | None = None
+
+
+class UpdateProjectRequest(BaseModel):
+    name: str | None = None
+    document: UmlDocument | None = None
