@@ -1,0 +1,21 @@
+.preview {
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  align-self: center;
+}
+
+.warning {
+  font-size: 12px;
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+.error {
+  font-size: 12px;
+  color: var(--color-danger);
+}

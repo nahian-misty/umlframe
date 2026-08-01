@@ -1,0 +1,40 @@
+.overlay {
+  position: absolute;
+  border: 1.5px dashed var(--color-selection);
+  pointer-events: none;
+}
+
+.handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-selection);
+  border-radius: 2px;
+  pointer-events: auto;
+}
+
+.nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.ne {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.sw {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+
+.se {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}

@@ -1,0 +1,35 @@
+.line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.hitArea {
+  pointer-events: stroke;
+  cursor: pointer;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.label,
+.multiplicity {
+  font-size: 11px;
+  font-family: var(--font-sans);
+  fill: var(--color-text-muted);
+  cursor: text;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.label {
+  fill: var(--color-text);
+}
+
+.editInput {
+  width: 100%;
+  height: 100%;
+  font-size: 11px;
+  border: 1px solid var(--color-selection);
+  border-radius: 2px;
+  padding: 0 2px;
+  box-sizing: border-box;
+}

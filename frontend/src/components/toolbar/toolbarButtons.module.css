@@ -1,0 +1,13 @@
+.group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.divider {
+  height: 1px;
+  width: 100%;
+  background: var(--color-border);
+  margin: 4px 0;
+}

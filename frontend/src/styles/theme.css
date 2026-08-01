@@ -1,0 +1,106 @@
+:root {
+  --color-bg: #f5f5f7;
+  --color-canvas-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-border: #d8d8dd;
+  --color-border-strong: #a8a8b3;
+  --color-text: #1d1d23;
+  --color-text-muted: #6b6b76;
+  --color-accent: #4f46e5;
+  --color-accent-contrast: #ffffff;
+  --color-danger: #dc2626;
+  --color-grid-line: #e2e2e8;
+  --color-selection: #4f46e5;
+  --color-selection-bg: rgba(79, 70, 229, 0.08);
+
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-page: 0 2px 12px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  --color-success: #16a34a;
+  --color-success-bg: rgba(22, 163, 74, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1a1a1f;
+    --color-canvas-bg: #202024;
+    --color-surface: #26262c;
+    --color-border: #3a3a42;
+    --color-border-strong: #55555f;
+    --color-text: #eceef2;
+    --color-text-muted: #9a9aa6;
+    --color-accent: #818cf8;
+    --color-accent-contrast: #12121a;
+    --color-danger: #f87171;
+    --color-grid-line: #303038;
+    --color-selection: #818cf8;
+    --color-selection-bg: rgba(129, 140, 248, 0.14);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-page: 0 2px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --color-success: #4ade80;
+    --color-success-bg: rgba(74, 222, 128, 0.14);
+  }
+}
+
+/*
+ * Explicit manual overrides, applied via a `data-theme` attribute on <html>
+ * by hooks/useTheme.ts. These only take effect when the user has made an
+ * explicit choice; when the attribute is absent, the prefers-color-scheme
+ * media query above is the only thing that applies, so an OS-dark user who
+ * hasn't chosen anything keeps working exactly as before.
+ */
+:root[data-theme='light'] {
+  --color-bg: #f5f5f7;
+  --color-canvas-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-border: #d8d8dd;
+  --color-border-strong: #a8a8b3;
+  --color-text: #1d1d23;
+  --color-text-muted: #6b6b76;
+  --color-accent: #4f46e5;
+  --color-accent-contrast: #ffffff;
+  --color-danger: #dc2626;
+  --color-grid-line: #e2e2e8;
+  --color-selection: #4f46e5;
+  --color-selection-bg: rgba(79, 70, 229, 0.08);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-page: 0 2px 12px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --color-success: #16a34a;
+  --color-success-bg: rgba(22, 163, 74, 0.1);
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #1a1a1f;
+  --color-canvas-bg: #202024;
+  --color-surface: #26262c;
+  --color-border: #3a3a42;
+  --color-border-strong: #55555f;
+  --color-text: #eceef2;
+  --color-text-muted: #9a9aa6;
+  --color-accent: #818cf8;
+  --color-accent-contrast: #12121a;
+  --color-danger: #f87171;
+  --color-grid-line: #303038;
+  --color-selection: #818cf8;
+  --color-selection-bg: rgba(129, 140, 248, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-page: 0 2px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --color-success: #4ade80;
+  --color-success-bg: rgba(74, 222, 128, 0.14);
+}

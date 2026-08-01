@@ -1,0 +1,69 @@
+.box {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  user-select: none;
+}
+
+.box.selected {
+  border-color: var(--color-selection);
+  box-shadow: 0 0 0 2px var(--color-selection-bg);
+}
+
+.box.pendingSource {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg, var(--color-selection-bg));
+}
+
+.nameCompartment {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  cursor: move;
+}
+
+.nameInput {
+  width: 100%;
+  font-weight: 600;
+  text-align: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  outline: none;
+  border-radius: var(--radius-sm);
+}
+
+.nameInput:focus {
+  background: var(--color-selection-bg);
+}
+
+.compartment {
+  flex: 0 0 auto;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.compartment:last-child {
+  border-bottom: none;
+}
+
+.addRow {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: left;
+  padding: 3px 0;
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+
+.addRow:hover {
+  color: var(--color-accent);
+}

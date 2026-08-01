@@ -1,0 +1,55 @@
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--color-canvas-bg);
+  touch-action: none;
+}
+
+.viewport[data-active-tool='select'] {
+  cursor: default;
+}
+
+.viewport[data-active-tool='pan'] {
+  cursor: grab;
+}
+
+.viewport[data-active-tool='uml-class'],
+.viewport[data-active-tool='rectangle'],
+.viewport[data-active-tool='circle'],
+.viewport[data-active-tool='diamond'],
+.viewport[data-active-tool='line'],
+.viewport[data-active-tool='arrow'] {
+  cursor: crosshair;
+}
+
+.content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+/*
+ * A genuinely 0x0-sized <svg> with overflow:visible does not reliably paint
+ * children positioned outside its box in every Chromium build, so the vector
+ * layer is instead given a large fixed size. Line/text coordinates inside it
+ * are plain canvas-space pixels (matching UmlClassBox/ShapeRenderer), so this
+ * only needs to be bigger than any diagram this editor is used to build.
+ */
+.vectorLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 20000px;
+  height: 20000px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px dashed var(--color-selection);
+  background: var(--color-selection-bg);
+  pointer-events: none;
+}

@@ -1,0 +1,81 @@
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.entry:not(:last-child) {
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.entry:hover .deleteButton {
+  visibility: visible;
+}
+
+.fieldRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.visibility,
+.input {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 0;
+  outline: none;
+  padding: 4px 6px;
+}
+
+.visibility:focus,
+.input:focus {
+  border-color: var(--color-accent);
+  background: var(--color-selection-bg);
+}
+
+.modifierRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deleteButton {
+  visibility: hidden;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-danger);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-family: var(--font-sans);
+}
+
+.deleteButton:hover {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}

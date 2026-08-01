@@ -1,0 +1,5 @@
+.hint {
+  font-size: 11px;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
