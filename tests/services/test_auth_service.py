@@ -53,7 +53,11 @@ def test_decode_invalid_token_raises():
 def test_decode_tampered_token_raises(db_session):
     user = auth_service.register_user(db_session, "dave@example.com", "password123")
     token = auth_service.create_access_token(user)
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    # Flip the second-to-last character rather than the last: the final base64url
+    # character of a 32-byte HMAC-SHA256 signature carries 2 padding bits that
+    # decoders ignore, so tampering it can occasionally be a no-op on the decoded
+    # signature bytes and leave the token valid.
+    tampered = token[:-2] + ("a" if token[-2] != "a" else "b") + token[-1]
     with pytest.raises(InvalidTokenError):
         auth_service.decode_access_token(tampered)
 
