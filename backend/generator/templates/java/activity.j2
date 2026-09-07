@@ -1,0 +1,26 @@
+{% macro render_body(statements, indent) %}
+{% for stmt in statements %}
+{% if stmt.kind == "action" %}
+{{ indent }}// TODO: {{ stmt.label }}
+{% elif stmt.kind == "if" %}
+{{ indent }}if (true) {  // {{ stmt.label }}
+{{ render_body(stmt.then, indent + "    ") }}
+{{ indent }}} else {
+{{ render_body(stmt["else"], indent + "    ") }}
+{{ indent }}}
+{% elif stmt.kind == "while" %}
+{# Boolean.FALSE, not the `false` literal -- javac treats a constant-false
+   `while` condition as making its body unreachable and refuses to compile
+   it; a boxed-Boolean field reference isn't a constant expression, so the
+   check doesn't trigger, and it still unboxes to false at runtime. #}
+{{ indent }}while (Boolean.FALSE) {  // {{ stmt.label }}
+{{ render_body(stmt.body, indent + "    ") }}
+{{ indent }}}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+public class {{ function_name }} {
+    public static void run() {
+{{ render_body(body, "        ") }}
+    }
+}

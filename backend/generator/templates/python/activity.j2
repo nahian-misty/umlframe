@@ -1,0 +1,34 @@
+{% macro render_body(statements, indent) %}
+{% for stmt in statements %}
+{% if stmt.kind == "action" %}
+{{ indent }}# TODO: {{ stmt.label }}
+{{ indent }}pass
+{% elif stmt.kind == "if" %}
+{{ indent }}if True:  # {{ stmt.label }}
+{% if stmt.then %}
+{{ render_body(stmt.then, indent + "    ") }}
+{% else %}
+{{ indent }}    pass
+{% endif %}
+{{ indent }}else:
+{% if stmt["else"] %}
+{{ render_body(stmt["else"], indent + "    ") }}
+{% else %}
+{{ indent }}    pass
+{% endif %}
+{% elif stmt.kind == "while" %}
+{{ indent }}while False:  # {{ stmt.label }}
+{% if stmt.body %}
+{{ render_body(stmt.body, indent + "    ") }}
+{% else %}
+{{ indent }}    pass
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+def {{ function_name }}():
+{% if body %}
+{{ render_body(body, "    ") }}
+{% else %}
+    pass
+{% endif %}
