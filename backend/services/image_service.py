@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 from backend.cv.preprocessor import preprocess
-from backend.cv.shape_detector import ClassBox, DetectedShapes, RelationshipLine, detect_shapes
+from backend.cv.shape_detector import ClassBox, RelationshipLine, detect_shapes
 from backend.ocr.extractor import extract_class_text
 from backend.parser.text_parser import parse_attribute_line, parse_class_name, parse_method_line
 from backend.schemas.uml import (
@@ -95,6 +95,34 @@ def _class_from_regions(class_id: str, regions, box: ClassBox) -> UmlClass:
 # ---------------------------------------------------------------------------
 
 
+_DIAMOND_TYPES = {
+    "diamond-hollow": RelationshipType.AGGREGATION,
+    "diamond-filled": RelationshipType.COMPOSITION,
+}
+
+
+def _classify_relationship(
+    line: RelationshipLine, p1_box_idx: int, p2_box_idx: int
+) -> tuple[RelationshipType, int, int]:
+    """Derive (type, source_box_idx, destination_box_idx) from the line's detected
+    dash style and endpoint markers. Diamond markers sit at the "whole" side
+    (source); a hollow triangle sits at the parent side (destination) — see
+    frontend/src/components/uml/relationshipStyles.ts for the marker convention
+    this mirrors."""
+    if line.marker_p1 in _DIAMOND_TYPES:
+        return _DIAMOND_TYPES[line.marker_p1], p1_box_idx, p2_box_idx
+    if line.marker_p2 in _DIAMOND_TYPES:
+        return _DIAMOND_TYPES[line.marker_p2], p2_box_idx, p1_box_idx
+
+    if line.marker_p1 == "triangle-hollow":
+        return RelationshipType.INHERITANCE, p2_box_idx, p1_box_idx
+    if line.marker_p2 == "triangle-hollow":
+        return RelationshipType.INHERITANCE, p1_box_idx, p2_box_idx
+
+    rel_type = RelationshipType.DEPENDENCY if line.dashed else RelationshipType.ASSOCIATION
+    return rel_type, p1_box_idx, p2_box_idx
+
+
 def _build_relationships(
     lines: list[RelationshipLine],
     boxes: list[ClassBox],
@@ -108,16 +136,18 @@ def _build_relationships(
     rel_id = 1
 
     for line in lines:
-        src_box_idx = _nearest_box(line.x1, line.y1, boxes)
-        dst_box_idx = _nearest_box(line.x2, line.y2, boxes)
+        p1_box_idx = _nearest_box(line.x1, line.y1, boxes)
+        p2_box_idx = _nearest_box(line.x2, line.y2, boxes)
 
-        if src_box_idx is None or dst_box_idx is None:
+        if p1_box_idx is None or p2_box_idx is None:
             continue
-        if src_box_idx == dst_box_idx:
+        if p1_box_idx == p2_box_idx:
             continue
 
-        src_class = classes[src_box_idx]
-        dst_class = classes[dst_box_idx]
+        rel_type, src_idx, dst_idx = _classify_relationship(line, p1_box_idx, p2_box_idx)
+
+        src_class = classes[src_idx]
+        dst_class = classes[dst_idx]
         pair = (src_class.id, dst_class.id)
 
         if pair in seen:
@@ -129,7 +159,7 @@ def _build_relationships(
                 id=f"rel_{rel_id}",
                 source=src_class.id,
                 destination=dst_class.id,
-                type=RelationshipType.ASSOCIATION,
+                type=rel_type,
                 multiplicity=_DEFAULT_MULTIPLICITY,
                 label="",
             )

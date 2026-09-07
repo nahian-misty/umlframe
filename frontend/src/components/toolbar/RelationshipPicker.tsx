@@ -7,6 +7,16 @@ import styles from './RelationshipPicker.module.css';
 
 const TYPES = Object.keys(RELATIONSHIP_LABELS) as RelationshipType[];
 
+// Inheritance is drawn source (child) -> destination (parent), with the
+// hollow triangle marker at the parent end — clarify that explicitly since
+// "source"/"destination" alone reads ambiguously for which end is which.
+const SOURCE_HINTS: Partial<Record<RelationshipType, string>> = {
+  inheritance: 'Click the subclass (child)…',
+};
+const DESTINATION_HINTS: Partial<Record<RelationshipType, string>> = {
+  inheritance: 'Click the superclass (parent)…',
+};
+
 export function RelationshipPicker() {
   const diagram = useDiagramContext();
 
@@ -34,8 +44,11 @@ export function RelationshipPicker() {
       {diagram.activeTool === 'relationship' && (
         <span className={styles.hint}>
           {diagram.pendingRelationshipSource
-            ? 'Click the destination class…'
-            : 'Click the source class…'}
+            ? (diagram.activeRelationshipType &&
+                DESTINATION_HINTS[diagram.activeRelationshipType]) ??
+              'Click the destination class…'
+            : (diagram.activeRelationshipType && SOURCE_HINTS[diagram.activeRelationshipType]) ??
+              'Click the source class…'}
         </span>
       )}
     </div>

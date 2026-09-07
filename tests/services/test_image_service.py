@@ -74,6 +74,68 @@ def _make_single_class_png(
     return _png_bytes(img)
 
 
+def _make_two_class_png(marker: str | None, dashed: bool = False) -> bytes:
+    """Two undivided (name-only) class boxes connected by a relationship line,
+    with an optional marker glyph (matching
+    frontend/src/components/uml/relationshipStyles.ts) at the box2
+    (destination-side) end: "triangle-hollow", "diamond-hollow",
+    "diamond-filled", or None for a plain (possibly dashed) chevron-style
+    line. Boxes are tall and undivided so the marker glyph's search radius
+    never reaches a compartment divider.
+    """
+    font_title = _font(16)
+    box_w = 180
+    box_h = 160
+    margin = 40
+    gap = 140
+    mid_y = margin + box_h // 2
+
+    img = Image.new(
+        "RGB", (margin * 2 + box_w * 2 + gap, margin * 2 + box_h), "white"
+    )
+    draw = ImageDraw.Draw(img)
+
+    def draw_box(bx: int, name: str) -> None:
+        by = margin
+        draw.rectangle([bx, by, bx + box_w, by + box_h], outline="black", width=2)
+        draw.text((bx + 8, by + 8), name, fill="black", font=font_title)
+
+    box1_x = margin
+    box2_x = margin + box_w + gap
+    draw_box(box1_x, "Dog")
+    draw_box(box2_x, "Animal")
+
+    line_x1, line_x2 = box1_x + box_w, box2_x
+    if dashed:
+        x = line_x1
+        while x < line_x2:
+            draw.line([x, mid_y, min(x + 6, line_x2), mid_y], fill="black", width=2)
+            x += 10
+    else:
+        draw.line([line_x1, mid_y, line_x2, mid_y], fill="black", width=2)
+
+    if marker == "triangle-hollow":
+        draw.polygon(
+            [(line_x2, mid_y), (line_x2 - 16, mid_y - 12), (line_x2 - 16, mid_y + 12)],
+            outline="black",
+            fill="white",
+        )
+    elif marker in ("diamond-hollow", "diamond-filled"):
+        fill = "white" if marker == "diamond-hollow" else "black"
+        draw.polygon(
+            [
+                (line_x1, mid_y),
+                (line_x1 + 16, mid_y - 12),
+                (line_x1 + 32, mid_y),
+                (line_x1 + 16, mid_y + 12),
+            ],
+            outline="black",
+            fill=fill,
+        )
+
+    return _png_bytes(img)
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -120,3 +182,55 @@ def test_empty_white_image_returns_empty_document():
     doc = image_to_document(_png_bytes(img))
     assert doc.classes == []
     assert doc.relationships == []
+
+
+# ---------------------------------------------------------------------------
+# Relationship type classification (end-to-end)
+# ---------------------------------------------------------------------------
+
+
+def _dog(doc):
+    return next(c for c in doc.classes if c.name == "Dog")
+
+
+def _animal(doc):
+    return next(c for c in doc.classes if c.name == "Animal")
+
+
+def test_plain_line_is_association():
+    doc = image_to_document(_make_two_class_png(marker=None))
+    assert len(doc.relationships) == 1
+    assert doc.relationships[0].type.value == "association"
+
+
+def test_dashed_line_is_dependency():
+    doc = image_to_document(_make_two_class_png(marker=None, dashed=True))
+    assert len(doc.relationships) == 1
+    assert doc.relationships[0].type.value == "dependency"
+
+
+def test_hollow_triangle_is_inheritance_with_child_as_source():
+    doc = image_to_document(_make_two_class_png(marker="triangle-hollow"))
+    assert len(doc.relationships) == 1
+    rel = doc.relationships[0]
+    assert rel.type.value == "inheritance"
+    assert rel.source == _dog(doc).id
+    assert rel.destination == _animal(doc).id
+
+
+def test_hollow_diamond_is_aggregation_with_whole_as_source():
+    doc = image_to_document(_make_two_class_png(marker="diamond-hollow"))
+    assert len(doc.relationships) == 1
+    rel = doc.relationships[0]
+    assert rel.type.value == "aggregation"
+    assert rel.source == _dog(doc).id
+    assert rel.destination == _animal(doc).id
+
+
+def test_filled_diamond_is_composition_with_whole_as_source():
+    doc = image_to_document(_make_two_class_png(marker="diamond-filled"))
+    assert len(doc.relationships) == 1
+    rel = doc.relationships[0]
+    assert rel.type.value == "composition"
+    assert rel.source == _dog(doc).id
+    assert rel.destination == _animal(doc).id

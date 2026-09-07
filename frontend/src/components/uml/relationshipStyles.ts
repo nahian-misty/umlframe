@@ -4,6 +4,10 @@ export interface RelationshipStyle {
   dashed: boolean;
   markerStart?: string;
   markerEnd?: string;
+  // Inheritance (generalization) has no UML multiplicity — a subclass isn't
+  // "1..* of" its superclass — so its edge shouldn't show the "1"/"1" labels
+  // every other relationship type carries.
+  showMultiplicity: boolean;
 }
 
 /**
@@ -14,11 +18,11 @@ export interface RelationshipStyle {
  * composition: solid line, filled diamond at source (the "whole" side)
  */
 export const RELATIONSHIP_STYLES: Record<RelationshipType, RelationshipStyle> = {
-  association: { dashed: false, markerEnd: 'arrow-open' },
-  dependency: { dashed: true, markerEnd: 'arrow-open' },
-  inheritance: { dashed: false, markerEnd: 'triangle-hollow' },
-  aggregation: { dashed: false, markerStart: 'diamond-hollow' },
-  composition: { dashed: false, markerStart: 'diamond-filled' },
+  association: { dashed: false, markerEnd: 'arrow-open', showMultiplicity: true },
+  dependency: { dashed: true, markerEnd: 'arrow-open', showMultiplicity: true },
+  inheritance: { dashed: false, markerEnd: 'triangle-hollow', showMultiplicity: false },
+  aggregation: { dashed: false, markerStart: 'diamond-hollow', showMultiplicity: true },
+  composition: { dashed: false, markerStart: 'diamond-filled', showMultiplicity: true },
 };
 
 export const RELATIONSHIP_LABELS: Record<RelationshipType, string> = {
