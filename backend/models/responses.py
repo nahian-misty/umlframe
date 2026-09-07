@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from backend.schemas.activity import ActivityDocument
 from backend.schemas.uml import UmlDocument
 
 
@@ -19,6 +20,7 @@ class TemplateListResponse(BaseModel):
 
 class ReverseResponse(BaseModel):
     document: UmlDocument
+    control_flow: ActivityDocument | None = None
 
 
 class MermaidResponse(BaseModel):
