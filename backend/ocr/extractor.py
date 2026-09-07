@@ -11,6 +11,11 @@ from backend.cv.shape_detector import ClassBox
 _TESS_CONFIG = "--oem 3 --psm 6 --dpi 300"
 _UPSCALE = 4
 _PAD = 12  # white border added around each crop before OCR
+# Shrink each compartment strip inward before cropping so a sliver of the box
+# border/divider line — a couple of px of detection noise, e.g. from adaptive
+# thresholding rounding differently per compartment — never bleeds into the
+# crop and skews its per-region Otsu threshold.
+_BORDER_INSET = 3
 
 
 @dataclass
@@ -38,14 +43,26 @@ def extract_class_text(gray: np.ndarray, box: ClassBox) -> ClassTextRegions:
         attr_strip = None
         meth_strip = None
 
-    class_name = _ocr_region(gray, name_strip).strip()
-    attr_text = _ocr_region(gray, attr_strip) if attr_strip else ""
-    meth_text = _ocr_region(gray, meth_strip) if meth_strip else ""
+    class_name = _ocr_region(gray, _inset(name_strip)).strip()
+    attr_text = _ocr_region(gray, _inset(attr_strip)) if attr_strip else ""
+    meth_text = _ocr_region(gray, _inset(meth_strip)) if meth_strip else ""
 
     return ClassTextRegions(
         class_name=class_name,
         attribute_lines=_split_lines(attr_text),
         method_lines=_split_lines(meth_text),
+    )
+
+
+def _inset(region: tuple[int, int, int, int] | None) -> tuple[int, int, int, int] | None:
+    if region is None:
+        return None
+    x, y, w, h = region
+    return (
+        x + _BORDER_INSET,
+        y + _BORDER_INSET,
+        max(0, w - 2 * _BORDER_INSET),
+        max(0, h - 2 * _BORDER_INSET),
     )
 
 

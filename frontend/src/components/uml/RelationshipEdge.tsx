@@ -99,39 +99,41 @@ export function RelationshipEdge({
         markerEnd={style.markerEnd ? `url(#${style.markerEnd})` : undefined}
       />
 
-      {editingField === 'source' ? (
-        renderEditBox(sourceAnchor.x, sourceAnchor.y - 12)
-      ) : (
-        <text
-          className={styles.multiplicity}
-          x={sourceAnchor.x}
-          y={sourceAnchor.y - 8}
-          textAnchor="middle"
-          onClick={(e) => {
-            e.stopPropagation();
-            startEdit('source', relationship.multiplicity.source);
-          }}
-        >
-          {relationship.multiplicity.source}
-        </text>
-      )}
+      {style.showMultiplicity &&
+        (editingField === 'source' ? (
+          renderEditBox(sourceAnchor.x, sourceAnchor.y - 12)
+        ) : (
+          <text
+            className={styles.multiplicity}
+            x={sourceAnchor.x}
+            y={sourceAnchor.y - 8}
+            textAnchor="middle"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEdit('source', relationship.multiplicity.source);
+            }}
+          >
+            {relationship.multiplicity.source}
+          </text>
+        ))}
 
-      {editingField === 'destination' ? (
-        renderEditBox(destAnchor.x, destAnchor.y - 12)
-      ) : (
-        <text
-          className={styles.multiplicity}
-          x={destAnchor.x}
-          y={destAnchor.y - 8}
-          textAnchor="middle"
-          onClick={(e) => {
-            e.stopPropagation();
-            startEdit('destination', relationship.multiplicity.destination);
-          }}
-        >
-          {relationship.multiplicity.destination}
-        </text>
-      )}
+      {style.showMultiplicity &&
+        (editingField === 'destination' ? (
+          renderEditBox(destAnchor.x, destAnchor.y - 12)
+        ) : (
+          <text
+            className={styles.multiplicity}
+            x={destAnchor.x}
+            y={destAnchor.y - 8}
+            textAnchor="middle"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEdit('destination', relationship.multiplicity.destination);
+            }}
+          >
+            {relationship.multiplicity.destination}
+          </text>
+        ))}
 
       {editingField === 'label' ? (
         renderEditBox(midpoint.x, midpoint.y)

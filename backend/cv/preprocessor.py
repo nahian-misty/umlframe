@@ -18,7 +18,10 @@ def to_grayscale(img: np.ndarray) -> np.ndarray:
 
 def to_binary(gray: np.ndarray) -> np.ndarray:
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, binary = cv2.threshold(blurred, 200, 255, cv2.THRESH_BINARY_INV)
+    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # Bridge small gaps from noise, thin lines, or anti-aliasing before contour detection.
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
     return binary
 
 
