@@ -63,6 +63,17 @@ def test_cross_class_import(cross_class_refs):
     assert "import { User } from './User.js';" in src
 
 
+def test_aggregation_single_produces_reference_field(aggregation_single):
+    src = generate_code(aggregation_single, LANG)["Department.js"]
+    assert "#employee = null;" in src
+    assert "import { Employee } from './Employee.js';" in src
+
+
+def test_aggregation_many_produces_list_field(aggregation_many):
+    src = generate_code(aggregation_many, LANG)["Department.js"]
+    assert "#employees = [];" in src
+
+
 def test_named_export(simple_class):
     src = generate_code(simple_class, LANG)["User.js"]
     assert "export { User }" in src

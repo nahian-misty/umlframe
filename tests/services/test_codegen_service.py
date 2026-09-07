@@ -95,3 +95,25 @@ def test_inheritance_correctly_resolved():
     python_files = generate_code(doc, "python")
     assert "class Dog(Animal):" in python_files["Dog.py"]
     assert "class Animal:" in python_files["Animal.py"]
+
+
+def test_aggregation_gives_whole_class_a_field_for_the_part():
+    doc = UmlDocument(
+        classes=[
+            UmlClass(id="class_1", name="Department", position=Position(x=0, y=0), size=Size(width=100, height=80)),
+            UmlClass(id="class_2", name="Employee", position=Position(x=0, y=0), size=Size(width=100, height=80)),
+        ],
+        relationships=[
+            Relationship(
+                id="rel_1",
+                source="class_1",
+                destination="class_2",
+                type=RelationshipType.AGGREGATION,
+                multiplicity=Multiplicity(source="1", destination="*"),
+                label="",
+            )
+        ],
+    )
+    python_files = generate_code(doc, "python")
+    assert "self.__employees: list[Employee] = []" in python_files["Department.py"]
+    assert "Department" not in python_files["Employee.py"]
