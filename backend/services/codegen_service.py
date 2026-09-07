@@ -45,6 +45,18 @@ class ImportContext:
     name: str
 
 
+@dataclass
+class RelationshipFieldContext:
+    """A field derived from an AGGREGATION/COMPOSITION edge rather than an
+    explicitly-declared Attribute: source = the "whole" class that gets the
+    field, destination = the "part" class the field references. Per
+    CLAUDE.md's Template Design rule, this structural decision (does the edge
+    imply a field, and what type) is resolved here, not in the template."""
+
+    part_class_name: str
+    many: bool
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -161,6 +173,72 @@ def _find_parent(cls: UmlClass, document: UmlDocument, class_map: dict[str, UmlC
     return None
 
 
+_RELATIONSHIP_FIELD_TYPES = (RelationshipType.AGGREGATION, RelationshipType.COMPOSITION)
+
+
+def _is_many(multiplicity_value: str) -> bool:
+    return "*" in multiplicity_value
+
+
+def _pluralize(name: str) -> str:
+    if name.endswith(("s", "x", "z", "ch", "sh")):
+        return name + "es"
+    if len(name) > 1 and name.endswith("y") and name[-2] not in "aeiou":
+        return name[:-1] + "ies"
+    return name + "s"
+
+
+def _decapitalize(name: str) -> str:
+    return name[0].lower() + name[1:] if name else name
+
+
+def _find_relationship_fields(
+    cls: UmlClass, document: UmlDocument, class_map: dict[str, UmlClass]
+) -> list[RelationshipFieldContext]:
+    """AGGREGATION/COMPOSITION edges where `cls` is the "whole" (source) each
+    imply a field referencing the "part" (destination) class."""
+    fields = []
+    for rel in document.relationships:
+        if rel.type not in _RELATIONSHIP_FIELD_TYPES or rel.source != cls.id:
+            continue
+        part_cls = class_map.get(rel.destination)
+        if part_cls is None:
+            continue
+        fields.append(
+            RelationshipFieldContext(
+                part_class_name=part_cls.name,
+                many=_is_many(rel.multiplicity.destination),
+            )
+        )
+    return fields
+
+
+def _build_relationship_attr_context(
+    field: RelationshipFieldContext, config: LanguageConfig, lang: str
+) -> AttrContext:
+    name = _pluralize(_decapitalize(field.part_class_name)) if field.many else _decapitalize(field.part_class_name)
+
+    if lang == "python":
+        field_type = f"list[{field.part_class_name}]" if field.many else field.part_class_name
+        default_value = "[]" if field.many else None
+    elif lang == "java":
+        field_type = f"List<{field.part_class_name}>" if field.many else field.part_class_name
+        default_value = "new ArrayList<>()" if field.many else None
+    else:  # javascript is untyped; `type` is unused by its template
+        field_type = field.part_class_name
+        default_value = "[]" if field.many else None
+
+    return AttrContext(
+        name=name,
+        prefixed_name=config.visibility_prefix.get("private", "") + name,
+        type=field_type,
+        default_value=default_value,
+        static=False,
+        final=False,
+        visibility_keyword=config.visibility_keyword.get("private", ""),
+    )
+
+
 def _build_template_context(
     cls: UmlClass,
     document: UmlDocument,
@@ -173,12 +251,27 @@ def _build_template_context(
     has_abstract = any(m.abstract for m in cls.methods)
 
     attrs = [_build_attr_context(a, config, class_names) for a in cls.attributes]
+    existing_attr_names = {a.name for a in attrs}
+
+    relationship_fields = _find_relationship_fields(cls, document, class_map)
+    relationship_class_names: set[str] = set()
+    for field in relationship_fields:
+        attr_ctx = _build_relationship_attr_context(field, config, lang)
+        if attr_ctx.name in existing_attr_names:
+            continue  # an explicitly-declared attribute already owns this name
+        existing_attr_names.add(attr_ctx.name)
+        attrs.append(attr_ctx)
+        if field.part_class_name != cls.name:
+            relationship_class_names.add(field.part_class_name)
+
     static_attributes = [a for a in attrs if a.static]
     instance_attributes = [a for a in attrs if not a.static]
     methods = [_build_method_context(m, config, lang) for m in cls.methods]
 
-    class_imports = sorted(_collect_class_imports(cls, config, class_names))
+    class_imports = sorted(_collect_class_imports(cls, config, class_names) | relationship_class_names)
     stdlib_imports = _collect_stdlib_imports(cls, config, lang)
+    if lang == "java" and any(f.many for f in relationship_fields):
+        stdlib_imports = sorted(set(stdlib_imports) | {"java.util.List", "java.util.ArrayList"})
 
     return {
         "class_name": cls.name,

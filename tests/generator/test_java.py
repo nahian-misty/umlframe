@@ -52,6 +52,18 @@ def test_inheritance_extends(inheritance_pair):
     assert "public class Dog extends Animal {" in src
 
 
+def test_aggregation_single_produces_reference_field(aggregation_single):
+    src = generate_code(aggregation_single, LANG)["Department.java"]
+    assert "private Employee employee;" in src
+
+
+def test_aggregation_many_produces_list_field(aggregation_many):
+    src = generate_code(aggregation_many, LANG)["Department.java"]
+    assert "private List<Employee> employees = new ArrayList<>();" in src
+    assert "import java.util.List;" in src
+    assert "import java.util.ArrayList;" in src
+
+
 def test_method_stub_throws(simple_class):
     from backend.schemas.uml import Method, Position, Size, UmlClass, UmlDocument, Visibility
 

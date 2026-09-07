@@ -51,6 +51,28 @@ def inheritance(source_id: str, dest_id: str) -> Relationship:
     )
 
 
+def aggregation(source_id: str, dest_id: str, destination_multiplicity: str = "1") -> Relationship:
+    return Relationship(
+        id="rel_1",
+        source=source_id,
+        destination=dest_id,
+        type=RelationshipType.AGGREGATION,
+        multiplicity=Multiplicity(source="1", destination=destination_multiplicity),
+        label="",
+    )
+
+
+def composition(source_id: str, dest_id: str, destination_multiplicity: str = "1") -> Relationship:
+    return Relationship(
+        id="rel_1",
+        source=source_id,
+        destination=dest_id,
+        type=RelationshipType.COMPOSITION,
+        multiplicity=Multiplicity(source="1", destination=destination_multiplicity),
+        label="",
+    )
+
+
 @pytest.fixture
 def simple_class() -> UmlDocument:
     return UmlDocument(
@@ -104,6 +126,39 @@ def inheritance_pair() -> UmlDocument:
             cls("class_2", "Dog"),
         ],
         relationships=[inheritance("class_2", "class_1")],
+    )
+
+
+@pytest.fixture
+def aggregation_single() -> UmlDocument:
+    return UmlDocument(
+        classes=[
+            cls("class_1", "Department"),
+            cls("class_2", "Employee"),
+        ],
+        relationships=[aggregation("class_1", "class_2", destination_multiplicity="1")],
+    )
+
+
+@pytest.fixture
+def aggregation_many() -> UmlDocument:
+    return UmlDocument(
+        classes=[
+            cls("class_1", "Department"),
+            cls("class_2", "Employee"),
+        ],
+        relationships=[aggregation("class_1", "class_2", destination_multiplicity="*")],
+    )
+
+
+@pytest.fixture
+def composition_many() -> UmlDocument:
+    return UmlDocument(
+        classes=[
+            cls("class_1", "Car"),
+            cls("class_2", "Wheel"),
+        ],
+        relationships=[composition("class_1", "class_2", destination_multiplicity="*")],
     )
 
 

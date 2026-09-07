@@ -68,6 +68,27 @@ def test_cross_class_import(cross_class_refs):
     assert "from .User import User" in src
 
 
+def test_aggregation_single_produces_reference_field(aggregation_single):
+    src = generate_code(aggregation_single, LANG)["Department.py"]
+    assert "self.__employee: Employee = None" in src
+    assert "from .Employee import Employee" in src
+
+
+def test_aggregation_many_produces_list_field(aggregation_many):
+    src = generate_code(aggregation_many, LANG)["Department.py"]
+    assert "self.__employees: list[Employee] = []" in src
+
+
+def test_composition_many_produces_list_field(composition_many):
+    src = generate_code(composition_many, LANG)["Car.py"]
+    assert "self.__wheels: list[Wheel] = []" in src
+
+
+def test_aggregation_field_not_added_to_part_class(aggregation_single):
+    src = generate_code(aggregation_single, LANG)["Employee.py"]
+    assert "Department" not in src
+
+
 def test_empty_document_returns_no_files():
     from backend.schemas.uml import UmlDocument
     files = generate_code(UmlDocument(), LANG)
