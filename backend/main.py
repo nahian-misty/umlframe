@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import auth, codegen, image, projects
+from backend.api.routes import auth, codegen, image, projects, reverse
 from backend.config import settings
 from backend.db.session import init_db
 
@@ -28,3 +28,4 @@ app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(codegen.router)
 app.include_router(image.router)
+app.include_router(reverse.router)
