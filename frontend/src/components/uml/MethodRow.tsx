@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type FocusEvent } from 'react';
 import { X } from 'lucide-react';
 
 import type { MethodState, ParameterState } from '../../types/diagram';
 import type { Visibility } from '../../types/uml';
 import { ModifierChip } from './ModifierChip';
+import { visibilitySymbol } from './visibilitySymbol';
 import styles from './MethodRow.module.css';
 
 interface MethodRowProps {
   method: MethodState;
+  startExpanded: boolean;
   onChange: (patch: Partial<Omit<MethodState, 'id'>>) => void;
   onDelete: () => void;
 }
@@ -30,11 +32,48 @@ function textToParams(text: string): ParameterState[] {
     });
 }
 
-export function MethodRow({ method, onChange, onDelete }: MethodRowProps) {
+function summarize(method: MethodState): string {
+  const modifiers = [method.static && 'static', method.abstract && 'abstract']
+    .filter(Boolean)
+    .join(' ');
+  const base = `${visibilitySymbol(method.visibility)}${method.name}(${paramsToText(method.parameters)}): ${method.returnType}`;
+  return modifiers ? `${base} {${modifiers}}` : base;
+}
+
+export function MethodRow({ method, startExpanded, onChange, onDelete }: MethodRowProps) {
   const [paramsText, setParamsText] = useState(() => paramsToText(method.parameters));
+  const [isExpanded, setIsExpanded] = useState(startExpanded);
+  const entryRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Expanding never happens mid-edit (only via the collapsed summary, which
+  // has no focusable field of its own), so nothing is focused yet — without
+  // this, clicking away wouldn't produce a blur to collapse back on.
+  useEffect(() => {
+    if (isExpanded) nameInputRef.current?.focus();
+  }, [isExpanded]);
+
+  const handleBlur = (e: FocusEvent<HTMLDivElement>) => {
+    if (!entryRef.current?.contains(e.relatedTarget as Node | null)) {
+      onChange({ parameters: textToParams(paramsText) });
+      setIsExpanded(false);
+    }
+  };
+
+  if (!isExpanded) {
+    return (
+      <div
+        className={styles.summary}
+        onClick={() => setIsExpanded(true)}
+        title="Click to edit"
+      >
+        {summarize(method)}
+      </div>
+    );
+  }
 
   return (
-    <div className={styles.entry}>
+    <div className={styles.entry} ref={entryRef} onBlur={handleBlur}>
       <div className={styles.fieldRow}>
         <label className={styles.field} style={{ flex: '0 0 100px' }}>
           <span className={styles.fieldLabel}>Visibility</span>
@@ -52,6 +91,7 @@ export function MethodRow({ method, onChange, onDelete }: MethodRowProps) {
         <label className={styles.field} style={{ flex: '1 1 auto' }}>
           <span className={styles.fieldLabel}>Name</span>
           <input
+            ref={nameInputRef}
             className={styles.input}
             value={method.name}
             placeholder="methodName"

@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { AttributeState, MethodState, UmlClassState } from '../../types/diagram';
 import { AttributeRow } from './AttributeRow';
@@ -44,6 +44,12 @@ export function UmlClassBox({
   onPointerDownBox,
   onUpdate,
 }: UmlClassBoxProps) {
+  // Rows created via "+ attribute"/"+ method" start expanded for editing;
+  // rows already present when the box mounted (loaded from a document) start
+  // collapsed. Tracked by id since AttributeState/MethodState are pure data
+  // shared with the wire format — this is UI-only and never persisted.
+  const [autoExpandIds, setAutoExpandIds] = useState<Set<string>>(new Set());
+
   const updateAttribute = (id: string, patch: Partial<Omit<AttributeState, 'id'>>) => {
     onUpdate({ attributes: cls.attributes.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
   };
@@ -51,7 +57,9 @@ export function UmlClassBox({
     onUpdate({ attributes: cls.attributes.filter((a) => a.id !== id) });
   };
   const addAttribute = () => {
-    onUpdate({ attributes: [...cls.attributes, newAttribute(cls.name || 'new')] });
+    const attribute = newAttribute(cls.name || 'new');
+    setAutoExpandIds((prev) => new Set(prev).add(attribute.id));
+    onUpdate({ attributes: [...cls.attributes, attribute] });
   };
 
   const updateMethod = (id: string, patch: Partial<Omit<MethodState, 'id'>>) => {
@@ -61,7 +69,9 @@ export function UmlClassBox({
     onUpdate({ methods: cls.methods.filter((m) => m.id !== id) });
   };
   const addMethod = () => {
-    onUpdate({ methods: [...cls.methods, newMethod()] });
+    const method = newMethod();
+    setAutoExpandIds((prev) => new Set(prev).add(method.id));
+    onUpdate({ methods: [...cls.methods, method] });
   };
 
   const boxClassName = [
@@ -97,6 +107,7 @@ export function UmlClassBox({
           <AttributeRow
             key={attribute.id}
             attribute={attribute}
+            startExpanded={autoExpandIds.has(attribute.id)}
             onChange={(patch) => updateAttribute(attribute.id, patch)}
             onDelete={() => deleteAttribute(attribute.id)}
           />
@@ -111,6 +122,7 @@ export function UmlClassBox({
           <MethodRow
             key={method.id}
             method={method}
+            startExpanded={autoExpandIds.has(method.id)}
             onChange={(patch) => updateMethod(method.id, patch)}
             onDelete={() => deleteMethod(method.id)}
           />

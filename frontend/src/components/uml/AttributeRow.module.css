@@ -9,6 +9,26 @@
   border-bottom: 1px dashed var(--color-border);
 }
 
+.summary {
+  padding: 4px 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary:not(:last-child) {
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.summary:hover {
+  background: var(--color-selection-bg);
+}
+
 .entry:hover .deleteButton {
   visibility: visible;
 }

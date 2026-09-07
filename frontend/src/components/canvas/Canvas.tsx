@@ -202,6 +202,15 @@ export function Canvas() {
       return;
     }
 
+    // Let clicks on form controls (name/attribute/method fields, modifier
+    // chips, remove buttons) behave natively — edit/select text, toggle,
+    // etc. — instead of being hijacked into a box selection/drag. Only
+    // applies to the select tool: the relationship tool (handled above)
+    // still needs a click anywhere on the box, including its name field, to
+    // arm/complete a connection.
+    const target = e.target as HTMLElement;
+    if (target.closest('input, select, textarea, button')) return;
+
     if (diagram.activeTool !== 'select') return;
 
     const ref: SelectableRef = { kind, id };
