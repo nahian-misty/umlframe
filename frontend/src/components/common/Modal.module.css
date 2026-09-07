@@ -22,6 +22,10 @@
   gap: var(--space-3);
 }
 
+.wide {
+  width: min(900px, 92vw);
+}
+
 .header {
   display: flex;
   align-items: center;

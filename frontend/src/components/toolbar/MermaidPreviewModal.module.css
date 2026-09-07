@@ -1,0 +1,20 @@
+.status {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.error {
+  font-size: 13px;
+  color: var(--color-danger);
+}
+
+.diagramContainer {
+  overflow: auto;
+  max-height: 70vh;
+  display: flex;
+  justify-content: center;
+}
+
+.diagramContainer :global(svg) {
+  max-width: none;
+}

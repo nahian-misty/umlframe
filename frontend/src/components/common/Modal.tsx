@@ -9,12 +9,16 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  wide?: boolean;
 }
 
-export function Modal({ title, onClose, children, footer }: ModalProps) {
+export function Modal({ title, onClose, children, footer, wide = false }: ModalProps) {
   return (
     <div className={styles.backdrop} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={wide ? `${styles.modal} ${styles.wide}` : styles.modal}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
           <strong className={styles.title}>{title}</strong>
           <IconButton icon={X} aria-label="Close" size="sm" onClick={onClose} />

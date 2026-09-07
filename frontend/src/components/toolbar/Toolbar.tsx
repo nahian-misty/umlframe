@@ -1,6 +1,7 @@
 import { CodeGenPanel } from './CodeGenPanel';
 import { ExportPngButton } from './ExportPngButton';
 import { ImageUploadButton } from './ImageUploadButton';
+import { MermaidPreviewButton } from './MermaidPreviewButton';
 import { RelationshipPicker } from './RelationshipPicker';
 import { ShapeToolPicker } from './ShapeToolPicker';
 import { ZoomControls } from './ZoomControls';
@@ -22,6 +23,7 @@ export function Toolbar() {
         <ImageUploadButton />
         <ExportPngButton />
         <CodeGenPanel />
+        <MermaidPreviewButton />
       </div>
     </div>
   );
