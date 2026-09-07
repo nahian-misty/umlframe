@@ -22,6 +22,19 @@ class GenerateCodeRequest(BaseModel):
         return v
 
 
+class GenerateActivityCodeRequest(BaseModel):
+    document: ActivityDocument
+    language: str
+    function_name: str = "generated_function"
+
+    @field_validator("language")
+    @classmethod
+    def language_must_be_supported(cls, v: str) -> str:
+        if v not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language '{v}'. Supported: {SUPPORTED_LANGUAGES}")
+        return v
+
+
 class ReverseRequest(BaseModel):
     source: str
     language: str
