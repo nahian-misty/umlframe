@@ -4,22 +4,17 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '../common/Button';
 import { ThemeToggle } from '../common/ThemeToggle';
-import { ComingSoonModal } from '../dashboard/ComingSoonModal';
-import { COMING_SOON, type ComingSoonKey } from '../../data/comingSoonCopy';
+import { ActivityCodeModal } from '../toolbar/ActivityCodeModal';
+import { ReverseUmlModal } from '../toolbar/ReverseUmlModal';
+import { ReverseActivityModal } from '../toolbar/ReverseActivityModal';
 import { useAuthContext } from '../../context/AuthContext';
 import { useTheme } from '../../hooks/useTheme';
 import styles from './Header.module.css';
 
 export type PipelineId = 'uml-code' | 'activity-code' | 'code-uml' | 'code-activity';
 
-const PIPELINE_COMING_SOON: Partial<Record<PipelineId, ComingSoonKey>> = {
-  'activity-code': 'activity-to-code',
-  'code-uml': 'code-to-uml',
-  'code-activity': 'code-to-activity',
-};
-
 export function Header() {
-  const [comingSoonKey, setComingSoonKey] = useState<ComingSoonKey | null>(null);
+  const [activeModal, setActiveModal] = useState<Exclude<PipelineId, 'uml-code'> | null>(null);
   const { user, logout } = useAuthContext();
   const { resolvedTheme, toggle } = useTheme();
   const navigate = useNavigate();
@@ -29,12 +24,11 @@ export function Header() {
   const activePipeline: PipelineId | null = isEditor ? 'uml-code' : null;
 
   const handlePipelineClick = (id: PipelineId) => {
-    const key = PIPELINE_COMING_SOON[id];
-    if (key) {
-      setComingSoonKey(key);
+    if (id === 'uml-code') {
+      navigate('/dashboard');
       return;
     }
-    navigate('/dashboard');
+    setActiveModal(id);
   };
 
   const handleLogout = () => {
@@ -103,12 +97,12 @@ export function Header() {
         </Button>
       </div>
 
-      {comingSoonKey && (
-        <ComingSoonModal
-          featureName={COMING_SOON[comingSoonKey].featureName}
-          description={COMING_SOON[comingSoonKey].description}
-          onClose={() => setComingSoonKey(null)}
-        />
+      {activeModal === 'activity-code' && (
+        <ActivityCodeModal onClose={() => setActiveModal(null)} />
+      )}
+      {activeModal === 'code-uml' && <ReverseUmlModal onClose={() => setActiveModal(null)} />}
+      {activeModal === 'code-activity' && (
+        <ReverseActivityModal onClose={() => setActiveModal(null)} />
       )}
     </header>
   );
