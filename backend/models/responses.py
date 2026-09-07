@@ -23,6 +23,10 @@ class ReverseResponse(BaseModel):
     control_flow: ActivityDocument | None = None
 
 
+class ActivityReverseResponse(BaseModel):
+    document: ActivityDocument
+
+
 class MermaidResponse(BaseModel):
     diagram: str
 
