@@ -1,6 +1,7 @@
 from pydantic import BaseModel, field_validator
 
 from backend.generator.registry import SUPPORTED_LANGUAGES
+from backend.reverse.registry import SUPPORTED_LANGUAGES as REVERSE_SUPPORTED_LANGUAGES
 from backend.schemas.uml import UmlDocument
 
 
@@ -20,6 +21,13 @@ class ReverseRequest(BaseModel):
     source: str
     language: str
     filename: str = ""
+
+    @field_validator("language")
+    @classmethod
+    def language_must_be_supported(cls, v: str) -> str:
+        if v not in REVERSE_SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language '{v}'. Supported: {REVERSE_SUPPORTED_LANGUAGES}")
+        return v
 
 
 class JsonToMermaidRequest(BaseModel):
