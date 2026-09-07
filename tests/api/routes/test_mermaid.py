@@ -32,3 +32,44 @@ def test_json_to_mermaid_invalid_document_returns_422():
     bad_document = {**VALID_DOCUMENT, "relationships": [{"id": "rel_1", "source": "class_1", "destination": "class_missing", "type": "association", "multiplicity": {"source": "1", "destination": "1"}}]}
     resp = client.post("/api/json-to-mermaid", json={"document": bad_document})
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Activity-diagram direction (diagram_type="activity")
+# ---------------------------------------------------------------------------
+
+VALID_ACTIVITY = {
+    "nodes": [
+        {"id": "n1", "type": "start", "position": {"x": 0, "y": 0}, "size": {"width": 160, "height": 80}},
+        {
+            "id": "n2",
+            "type": "action",
+            "label": "do work",
+            "position": {"x": 0, "y": 120},
+            "size": {"width": 160, "height": 80},
+        },
+        {"id": "n3", "type": "end", "position": {"x": 0, "y": 240}, "size": {"width": 160, "height": 80}},
+    ],
+    "edges": [
+        {"id": "e1", "source": "n1", "target": "n2"},
+        {"id": "e2", "source": "n2", "target": "n3"},
+    ],
+}
+
+
+def test_json_to_mermaid_activity_success():
+    resp = client.post("/api/json-to-mermaid", json={"diagram_type": "activity", "activity": VALID_ACTIVITY})
+    assert resp.status_code == 200
+    diagram = resp.json()["diagram"]
+    assert diagram.startswith("flowchart TD")
+    assert 'n2["do work"]' in diagram
+
+
+def test_json_to_mermaid_activity_without_activity_payload_returns_422():
+    resp = client.post("/api/json-to-mermaid", json={"diagram_type": "activity", "document": VALID_DOCUMENT})
+    assert resp.status_code == 422
+
+
+def test_json_to_mermaid_class_without_document_payload_returns_422():
+    resp = client.post("/api/json-to-mermaid", json={"diagram_type": "class"})
+    assert resp.status_code == 422

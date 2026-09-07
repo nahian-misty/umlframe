@@ -1,7 +1,12 @@
-from pydantic import BaseModel, field_validator
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, field_validator, model_validator
 
 from backend.generator.registry import SUPPORTED_LANGUAGES
 from backend.reverse.registry import SUPPORTED_LANGUAGES as REVERSE_SUPPORTED_LANGUAGES
+from backend.schemas.activity import ActivityDocument
 from backend.schemas.uml import UmlDocument
 
 
@@ -21,6 +26,11 @@ class ReverseRequest(BaseModel):
     source: str
     language: str
     filename: str = ""
+    # When both are set, the response also includes that method's control-flow
+    # graph (Milestone 6's activity-diagram extension) alongside the class
+    # structure -- a second, optional extraction path, not a mode switch.
+    class_name: str | None = None
+    method_name: str | None = None
 
     @field_validator("language")
     @classmethod
@@ -31,7 +41,17 @@ class ReverseRequest(BaseModel):
 
 
 class JsonToMermaidRequest(BaseModel):
-    document: UmlDocument
+    diagram_type: Literal["class", "activity"] = "class"
+    document: UmlDocument | None = None
+    activity: ActivityDocument | None = None
+
+    @model_validator(mode="after")
+    def payload_matches_diagram_type(self) -> JsonToMermaidRequest:
+        if self.diagram_type == "class" and self.document is None:
+            raise ValueError("'document' is required when diagram_type is 'class'")
+        if self.diagram_type == "activity" and self.activity is None:
+            raise ValueError("'activity' is required when diagram_type is 'activity'")
+        return self
 
 
 class RegisterRequest(BaseModel):
