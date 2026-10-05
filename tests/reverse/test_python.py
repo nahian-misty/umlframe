@@ -203,12 +203,13 @@ def test_composition_via_direct_instantiation():
     assert edges[0].multiplicity.destination == "1"
 
 
-def test_aggregation_via_parameter_passthrough():
+def test_single_parameter_passthrough_is_association_not_aggregation():
     doc = parse(_load("composition_aggregation.py"))
     car, person = _cls(doc, "Car"), _cls(doc, "Person")
-    edges = _rels(doc, car, person, RelationshipType.AGGREGATION)
+    edges = _rels(doc, car, person, RelationshipType.ASSOCIATION)
     assert len(edges) == 1
     assert edges[0].multiplicity.destination == "1"
+    assert _rels(doc, car, person, RelationshipType.AGGREGATION) == []
 
 
 def test_many_multiplicity_from_list_annotation():
@@ -220,7 +221,7 @@ def test_many_multiplicity_from_list_annotation():
     assert _attr(car, "wheels").datatype == "List[Wheel]"
 
 
-def test_aggregation_via_annotation_only_no_instantiation():
+def test_annotation_only_single_reference_is_association():
     source = """
 class Manager:
     pass
@@ -232,7 +233,7 @@ class Department:
 """
     doc = parse(source)
     department, manager = _cls(doc, "Department"), _cls(doc, "Manager")
-    edges = _rels(doc, department, manager, RelationshipType.AGGREGATION)
+    edges = _rels(doc, department, manager, RelationshipType.ASSOCIATION)
     assert len(edges) == 1
     assert _attr(department, "manager").default_value is None
 
@@ -250,13 +251,13 @@ def test_association_via_method_parameter_and_return_type():
     assert len(edges) == 1
 
 
-def test_association_excluded_when_already_aggregated():
+def test_attribute_and_method_param_association_collapse_to_one_edge():
     doc = parse(_load("composition_aggregation.py"))
     car, person = _cls(doc, "Car"), _cls(doc, "Person")
-    # register_owner(owner: Person) would otherwise imply association, but
-    # Person is already owned via aggregation from the same source -> excluded
-    assert _rels(doc, car, person, RelationshipType.ASSOCIATION) == []
-    assert len(doc.relationships) == 3  # composition + aggregation + aggregation(many) only
+    # register_owner(owner: Person) repeats the association the `owner` attribute already
+    # gives, so there is still exactly one Car -> Person edge.
+    assert len(_rels(doc, car, person, RelationshipType.ASSOCIATION)) == 1
+    assert len(doc.relationships) == 3  # composition + association + aggregation(many) only
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +278,7 @@ class Car:
 """
     doc = parse(source)
     assert len(doc.relationships) == 1
-    assert doc.relationships[0].type == RelationshipType.AGGREGATION
+    assert doc.relationships[0].type == RelationshipType.ASSOCIATION
 
 
 def test_nested_class_is_not_discovered():
@@ -301,3 +302,64 @@ def test_empty_source_returns_empty_document():
     doc = parse("")
     assert doc.classes == []
     assert doc.relationships == []
+
+
+def test_annotated_param_passthrough_keeps_declared_type():
+    doc = parse(
+        "class User:\n"
+        "    def __init__(self, name: str, age: int, tags: list[str]):\n"
+        "        self.name = name\n"
+        "        self.age = age\n"
+        "        self.tags = tags\n"
+    )
+    types = {a.name: a.datatype for a in doc.classes[0].attributes}
+    assert types == {"name": "String", "age": "int", "tags": "List[String]"}
+
+
+def test_builtin_literals_and_calls_infer_types():
+    doc = parse(
+        "class Bag:\n"
+        "    def __init__(self, label):\n"
+        "        self.items = []\n"
+        "        self.index = {}\n"
+        "        self.seen = set()\n"
+        "        self.title = str(label)\n"
+        "        self.greeting = f'hi {label}'\n"
+        "        self.raw = label\n"
+    )
+    types = {a.name: a.datatype for a in doc.classes[0].attributes}
+    assert types == {
+        "items": "List",
+        "index": "Map",
+        "seen": "Set",
+        "title": "String",
+        "greeting": "String",
+        "raw": "object",
+    }
+
+
+def test_optional_union_annotation_maps_inner_type():
+    doc = parse(
+        "class A:\n"
+        "    def __init__(self, nick: str | None):\n"
+        "        self.nick = nick\n"
+    )
+    assert doc.classes[0].attributes[0].datatype == "String | None"
+
+
+def test_car_driver_wheels_engine_relationship_kinds():
+    doc = parse(
+        "class Engine:\n    pass\n\nclass Wheel:\n    pass\n\nclass Driver:\n    pass\n\n"
+        "class Car:\n"
+        "    def __init__(self, driver: Driver, wheels: list[Wheel]):\n"
+        "        self.engine = Engine()\n"
+        "        self.driver = driver\n"
+        "        self.wheels = wheels\n"
+    )
+    names = {c.id: c.name for c in doc.classes}
+    kinds = {(names[r.destination], r.type) for r in doc.relationships}
+    assert kinds == {
+        ("Engine", RelationshipType.COMPOSITION),
+        ("Driver", RelationshipType.ASSOCIATION),
+        ("Wheel", RelationshipType.AGGREGATION),
+    }
