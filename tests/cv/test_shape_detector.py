@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import io
 
-import numpy as np
-import pytest
 from PIL import Image, ImageDraw
 
 from backend.cv.preprocessor import preprocess
