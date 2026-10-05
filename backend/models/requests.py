@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator, model_validator
 
 from backend.generator.registry import SUPPORTED_LANGUAGES
+from backend.models.project_state import DEFAULT_PROJECT_TYPE, CodeInputs, ProjectType
 from backend.reverse.registry import SUPPORTED_LANGUAGES as REVERSE_SUPPORTED_LANGUAGES
 from backend.schemas.activity import ActivityDocument
 from backend.schemas.uml import UmlDocument
@@ -107,11 +108,38 @@ class LoginRequest(BaseModel):
     password: str
 
 
+PROJECT_NAME_MAX_LENGTH = 255
+
+
+def _clean_project_name(value: str) -> str:
+    name = value.strip()
+    if not name:
+        raise ValueError("Project name must not be blank")
+    if len(name) > PROJECT_NAME_MAX_LENGTH:
+        raise ValueError(f"Project name must be at most {PROJECT_NAME_MAX_LENGTH} characters")
+    return name
+
+
 class CreateProjectRequest(BaseModel):
     name: str
+    project_type: ProjectType = DEFAULT_PROJECT_TYPE
     document: UmlDocument | None = None
+    activity_document: ActivityDocument | None = None
+    code_inputs: CodeInputs | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_valid(cls, v: str) -> str:
+        return _clean_project_name(v)
 
 
 class UpdateProjectRequest(BaseModel):
     name: str | None = None
     document: UmlDocument | None = None
+    activity_document: ActivityDocument | None = None
+    code_inputs: CodeInputs | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_valid(cls, v: str | None) -> str | None:
+        return None if v is None else _clean_project_name(v)
