@@ -52,3 +52,13 @@ class ActivityDocument(BaseModel):
             raise ValueError("ActivityDocument must have at least one END node")
 
         return self
+
+
+class MethodControlFlow(BaseModel):
+    """One method's extracted control flow; `error` is set (and `control_flow` is None)
+    when that method alone could not be reduced, so one bad method never hides the rest."""
+
+    class_name: str
+    method_name: str
+    control_flow: ActivityDocument | None = None
+    error: str | None = None

@@ -7,6 +7,12 @@ from backend.schemas.activity import ActivityNodeType
 def _nodes_by_type(doc, node_type):
     return [n for n in doc.nodes if n.type == node_type]
 
+def _flow(doc):
+    """The diagram as {(source label, edge label, target label)}; START/END are named."""
+    names = {n.id: n.label or n.type.value for n in doc.nodes}
+    return {(names[e.source], e.label, names[e.target]) for e in doc.edges}
+
+
 
 def _edge(doc, source_id, target_id):
     return next(e for e in doc.edges if e.source == source_id and e.target == target_id)
@@ -118,7 +124,7 @@ class Calc {
     assert any(e.source == yes_edge.target and e.target == decision.id for e in doc.edges)
 
 
-def test_try_catch_renders_as_single_opaque_action():
+def test_try_catch_branches_on_the_exception_instead_of_one_opaque_action():
     source = """
 class Calc {
     safeDiv(a, b) {
@@ -131,9 +137,34 @@ class Calc {
 }
 """
     doc = extract_control_flow(source, "Calc", "safeDiv")
-    actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
-    assert len(actions) == 1
-    assert actions[0].label == "try"
+    assert _flow(doc) == {
+        ("start", "", "exception thrown?"),
+        ("exception thrown?", "yes", "return 0"),
+        ("exception thrown?", "no", "return a / b"),
+        ("return 0", "", "end"),
+        ("return a / b", "", "end"),
+    }
+
+
+def test_try_catch_finally_merges_both_paths_into_finally():
+    source = """
+class S {
+    f() {
+        try { a(); } catch (e) { b(); } finally { d(); }
+        e();
+    }
+}
+"""
+    assert _flow(extract_control_flow(source, "S", "f")) == {
+        ("start", "", "exception thrown?"),
+        ("exception thrown?", "yes", "b()"),
+        ("exception thrown?", "no", "a()"),
+        ("a()", "", "finally"),
+        ("b()", "", "finally"),
+        ("finally", "", "d()"),
+        ("d()", "", "e()"),
+        ("e()", "", "end"),
+    }
 
 
 def test_class_not_found_raises_value_error():
@@ -151,3 +182,13 @@ def test_method_not_found_raises_value_error():
 def test_invalid_syntax_raises_value_error():
     with pytest.raises(ValueError):
         extract_control_flow("class Calc { run( {} }", "Calc", "run")
+
+
+def test_list_methods_skips_constructor():
+    from backend.reverse.javascript.parser import list_methods
+
+    source = (
+        "class A {\n  constructor() {}\n  run() {}\n  stop() {}\n}\n"
+        "class B {\n  go() {}\n}\n"
+    )
+    assert list_methods(source) == [("A", "run"), ("A", "stop"), ("B", "go")]

@@ -385,6 +385,23 @@ class _CfgBuilder:
         self.edges.append(ActivityEdge(id=f"e{self._edge_count}", source=source, target=target, label=label))
 
 
+def list_methods(source: str) -> list[tuple[str, str]]:
+    """(class name, method name) for every concrete method of every top-level class."""
+    try:
+        tree = javalang.parse.parse(source)
+    except (javalang.parser.JavaParserBaseException, LexerError) as exc:
+        raise ValueError(f"Invalid Java source: {exc}") from exc
+
+    methods: list[tuple[str, str]] = []
+    for node in tree.types:
+        if not isinstance(node, ClassDeclaration):
+            continue
+        for method in node.methods:
+            if method.body is not None and (node.name, method.name) not in methods:
+                methods.append((node.name, method.name))
+    return methods
+
+
 def extract_control_flow(source: str, class_name: str, method_name: str) -> ActivityDocument:
     """Reverse-engineer one method's control flow into an ActivityDocument."""
     try:
@@ -468,6 +485,22 @@ def _walk_block(stmts: list[Any], entry: _OpenTails, builder: _CfgBuilder, end_i
                 builder.add_edge(tail_id, cond_id, edge_label)
             current = [(cond_id, "no")]
 
+        elif type_name == "TryStatement":
+            if stmt.resources:
+                buffer.append("open resources")
+            flush()
+            handlers = [
+                (" | ".join(c.parameter.types), list(c.block or [])) for c in stmt.catches or []
+            ]
+            current = _walk_try(
+                list(stmt.block or []),
+                handlers,
+                list(stmt.finally_block or []),
+                current,
+                builder,
+                end_id,
+            )
+
         elif type_name in ("ReturnStatement", "ThrowStatement"):
             keyword = "return" if type_name == "ReturnStatement" else "throw"
             expr = stmt.expression
@@ -486,6 +519,53 @@ def _walk_block(stmts: list[Any], entry: _OpenTails, builder: _CfgBuilder, end_i
 
     flush()
     return current
+
+
+def _walk_try(
+    body: list[Any],
+    handlers: list[tuple[str, list[Any]]],
+    finalbody: list[Any],
+    entry: _OpenTails,
+    builder: _CfgBuilder,
+    end_id: str,
+) -> _OpenTails:
+    """try/catch/finally as branches: a decision splits the exception path (one branch per
+    catch clause) from the normal path (the body); both merge into a `finally` node. A
+    `return` inside the try still goes straight to END, bypassing the finally."""
+    handler_tails: _OpenTails = []
+    unmatched: _OpenTails = []
+    normal_entry = entry
+
+    if handlers:
+        root_label = f"catch {handlers[0][0]}?" if len(handlers) == 1 else "exception thrown?"
+        root_id = builder.add_node(ActivityNodeType.DECISION, _truncate(root_label))
+        for src_id, edge_label in entry:
+            builder.add_edge(src_id, root_id, edge_label)
+        normal_entry = [(root_id, "no")]
+
+        pending: _OpenTails = [(root_id, "yes")]
+        if len(handlers) == 1:
+            handler_tails = _walk_block(handlers[0][1], pending, builder, end_id)
+            pending = []
+        else:
+            for exc_type, handler_body in handlers:
+                check_id = builder.add_node(
+                    ActivityNodeType.DECISION, _truncate(f"catch {exc_type}?")
+                )
+                for src_id, edge_label in pending:
+                    builder.add_edge(src_id, check_id, edge_label)
+                handler_tails += _walk_block(handler_body, [(check_id, "yes")], builder, end_id)
+                pending = [(check_id, "no")]
+        unmatched = pending  # an exception no catch matches still runs the finally
+
+    merged = _walk_block(body, normal_entry, builder, end_id) + handler_tails + unmatched
+
+    if not finalbody or not merged:
+        return merged
+    finally_id = builder.add_node(ActivityNodeType.ACTION, "finally")
+    for src_id, edge_label in merged:
+        builder.add_edge(src_id, finally_id, edge_label)
+    return _walk_block(finalbody, [(finally_id, "")], builder, end_id)
 
 
 def _as_stmt_list(node: Any) -> list[Any]:
