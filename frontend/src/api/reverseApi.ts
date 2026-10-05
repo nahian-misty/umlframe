@@ -43,3 +43,38 @@ export async function reverseToControlFlow(
   }
   return result.control_flow;
 }
+
+export interface MethodControlFlow {
+  className: string;
+  methodName: string;
+  controlFlow: ActivityDocument | null;
+  error: string | null;
+}
+
+export function methodKey(method: Pick<MethodControlFlow, 'className' | 'methodName'>): string {
+  return `${method.className}.${method.methodName}`;
+}
+
+export async function reverseToControlFlows(
+  source: string,
+  language: ReverseLanguage,
+): Promise<MethodControlFlow[]> {
+  const result = await apiFetch<{
+    methods: {
+      class_name: string;
+      method_name: string;
+      control_flow: ActivityDocument | null;
+      error: string | null;
+    }[];
+  }>('/api/reverse-control-flows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, language }),
+  });
+  return result.methods.map((m) => ({
+    className: m.class_name,
+    methodName: m.method_name,
+    controlFlow: m.control_flow,
+    error: m.error,
+  }));
+}

@@ -1,0 +1,38 @@
+.name,
+.input {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  width: calc(100% + 12px);
+  box-sizing: border-box;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.name:hover,
+.name:focus-visible {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+  outline: none;
+}
+
+.input {
+  background: var(--color-bg);
+  border-color: var(--color-accent);
+}
+
+.input:focus {
+  outline: none;
+}
