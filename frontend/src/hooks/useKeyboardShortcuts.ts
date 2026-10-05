@@ -8,10 +8,24 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
 }
 
-export function useKeyboardShortcuts(diagram: UseDiagramResult): void {
+export function useKeyboardShortcuts(diagram: UseDiagramResult, enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) diagram.redo();
+        else diagram.undo();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        diagram.redo();
+        return;
+      }
 
       if (event.key === 'Delete' || event.key === 'Backspace') {
         if (diagram.selected.length === 0) return;
@@ -36,5 +50,5 @@ export function useKeyboardShortcuts(diagram: UseDiagramResult): void {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [diagram]);
+  }, [diagram, enabled]);
 }

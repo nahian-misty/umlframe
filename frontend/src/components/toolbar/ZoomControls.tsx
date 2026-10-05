@@ -2,6 +2,7 @@ import { Magnet, Minus, Plus, RotateCcw } from 'lucide-react';
 
 import { useDiagramContext } from '../../context/DiagramContext';
 import { Button } from '../common/Button';
+import { FitToContentButton } from './FitToContentButton';
 import shared from './toolbarButtons.module.css';
 
 export function ZoomControls() {
@@ -15,6 +16,7 @@ export function ZoomControls() {
       <Button size="sm" icon={RotateCcw} onClick={diagram.resetView} title="Reset view">
         Reset
       </Button>
+      <FitToContentButton canvas={diagram} />
       <Button
         size="sm"
         icon={Magnet}

@@ -1,0 +1,108 @@
+.tabBar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--color-text);
+}
+
+.tabActive {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.sourcePanel {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sourceTextarea {
+  min-height: 260px;
+}
+
+.canvasArea {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 45%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.drawerBody {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.problems {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+}

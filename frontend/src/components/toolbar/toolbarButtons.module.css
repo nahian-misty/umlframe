@@ -11,3 +11,10 @@
   background: var(--color-border);
   margin: 4px 0;
 }
+
+.hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
