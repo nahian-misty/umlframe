@@ -1,12 +1,9 @@
 .grid {
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
   background-color: var(--color-surface);
   background-image:
     linear-gradient(to right, var(--color-grid-line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--color-grid-line) 1px, transparent 1px);
-  border: 1px solid var(--color-border-strong);
-  box-shadow: var(--shadow-page);
   pointer-events: none;
 }

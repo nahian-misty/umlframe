@@ -1,18 +1,16 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { useDiagramContext } from '../../context/DiagramContext';
+import { useViewportNavigation } from '../../hooks/useViewportNavigation';
 import { RelationshipEdge } from '../uml/RelationshipEdge';
 import { RelationshipMarkerDefs } from '../uml/RelationshipMarkerDefs';
 import { UmlClassBox } from '../uml/UmlClassBox';
-import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
-  DEFAULT_CLASS_SIZE,
-  DEFAULT_SHAPE_SIZE,
-} from '../../utils/constants';
-import { clamp, normalizeRect, rectsIntersect, snap, type Rect } from '../../utils/geometry';
+import { DEFAULT_CLASS_SIZE, DEFAULT_SHAPE_SIZE } from '../../utils/constants';
+import { routeEdges } from '../../utils/edgeRouting';
+import { normalizeRect, rectsIntersect, snap, type Rect } from '../../utils/geometry';
 import type { GenericShape, SelectableRef, ShapeKind, UmlClassState } from '../../types/diagram';
-import { Grid } from './Grid';
+import { CanvasScrollbars } from './CanvasScrollbars';
+import { InfiniteGrid } from './InfiniteGrid';
 import { SelectionOverlay, type ResizeHandle } from './SelectionOverlay';
 import { ShapeRenderer } from './ShapeRenderer';
 import styles from './Canvas.module.css';
@@ -36,91 +34,31 @@ export function Canvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
 
-  // The canvas is a bounded, finite page (CANVAS_WIDTH x CANVAS_HEIGHT) rather
-  // than an infinitely pannable surface — pan is always clamped so the page
-  // can't be scrolled away from entirely.
-  const clampPan = (nextPan: { x: number; y: number }, zoom: number) => {
-    const viewportRect = viewportRef.current?.getBoundingClientRect();
-    if (!viewportRect) return nextPan;
-    const scaledWidth = CANVAS_WIDTH * zoom;
-    const scaledHeight = CANVAS_HEIGHT * zoom;
-    const minX = Math.min(0, viewportRect.width - scaledWidth);
-    const maxX = Math.max(0, viewportRect.width - scaledWidth);
-    const minY = Math.min(0, viewportRect.height - scaledHeight);
-    const maxY = Math.max(0, viewportRect.height - scaledHeight);
-    return {
-      x: clamp(nextPan.x, minX, maxX),
-      y: clamp(nextPan.y, minY, maxY),
-    };
-  };
+  const edgeRoutes = useMemo(
+    () =>
+      routeEdges(
+        new Map(diagram.classes.map((c) => [c.id, rectOf(c)])),
+        diagram.relationships.map((r) => ({
+          id: r.id,
+          source: r.source,
+          destination: r.destination,
+        })),
+      ),
+    [diagram.classes, diagram.relationships],
+  );
 
-  // Native (non-passive) wheel listener so ctrl/cmd+wheel zoom can preventDefault
-  // the browser's page-zoom gesture; React's onWheel is passive by default.
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-
-    const onWheelNative = (e: WheelEvent) => {
-      e.preventDefault();
-      if (e.ctrlKey || e.metaKey) {
-        diagram.setZoom(diagram.zoom - e.deltaY * 0.001);
-      } else {
-        diagram.setPan(
-          clampPan({ x: diagram.pan.x - e.deltaX, y: diagram.pan.y - e.deltaY }, diagram.zoom),
-        );
-      }
-    };
-
-    el.addEventListener('wheel', onWheelNative, { passive: false });
-    return () => el.removeEventListener('wheel', onWheelNative);
-  }, [diagram]);
-
-  // Re-clamp whenever zoom changes (e.g. via the toolbar's zoom buttons, which
-  // bypass the handlers above) or the viewport is resized.
-  useEffect(() => {
-    diagram.setPan(clampPan(diagram.pan, diagram.zoom));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diagram.zoom]);
-
-  useEffect(() => {
-    const onResize = () => diagram.setPan(clampPan(diagram.pan, diagram.zoom));
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [diagram]);
-
-  const toCanvasPoint = (clientX: number, clientY: number) => {
-    const viewportRect = viewportRef.current?.getBoundingClientRect();
-    if (!viewportRect) return { x: 0, y: 0 };
-    return {
-      x: (clientX - viewportRect.left - diagram.pan.x) / diagram.zoom,
-      y: (clientY - viewportRect.top - diagram.pan.y) / diagram.zoom,
-    };
-  };
+  const { toCanvasPoint, startPanDrag } = useViewportNavigation(viewportRef, diagram);
 
   const handleViewportPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      startPanDrag(e);
+      return;
+    }
     if (e.button !== 0) return;
 
     if (diagram.activeTool === 'pan') {
-      const startClientX = e.clientX;
-      const startClientY = e.clientY;
-      const startPan = diagram.pan;
-      const onMove = (ev: PointerEvent) => {
-        diagram.setPan(
-          clampPan(
-            {
-              x: startPan.x + (ev.clientX - startClientX),
-              y: startPan.y + (ev.clientY - startClientY),
-            },
-            diagram.zoom,
-          ),
-        );
-      };
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
+      startPanDrag(e);
       return;
     }
 
@@ -131,7 +69,6 @@ export function Canvas() {
         x: snap(canvasPoint.x - DEFAULT_CLASS_SIZE.width / 2, diagram.snapEnabled),
         y: snap(canvasPoint.y - DEFAULT_CLASS_SIZE.height / 2, diagram.snapEnabled),
       });
-      diagram.setActiveTool('select');
       return;
     }
 
@@ -141,7 +78,6 @@ export function Canvas() {
         x: snap(canvasPoint.x - DEFAULT_SHAPE_SIZE.width / 2, diagram.snapEnabled),
         y: snap(canvasPoint.y - DEFAULT_SHAPE_SIZE.height / 2, diagram.snapEnabled),
       });
-      diagram.setActiveTool('select');
       return;
     }
 
@@ -331,6 +267,7 @@ export function Canvas() {
       data-active-tool={diagram.activeTool}
       onPointerDown={handleViewportPointerDown}
     >
+      <InfiniteGrid pan={diagram.pan} zoom={diagram.zoom} />
       <div
         ref={diagram.contentRef}
         className={styles.content}
@@ -338,19 +275,16 @@ export function Canvas() {
           transform: `translate(${diagram.pan.x}px, ${diagram.pan.y}px) scale(${diagram.zoom})`,
         }}
       >
-        <Grid />
         <svg className={styles.vectorLayer}>
           <RelationshipMarkerDefs />
           {diagram.relationships.map((rel) => {
-            const source = diagram.classes.find((c) => c.id === rel.source);
-            const destination = diagram.classes.find((c) => c.id === rel.destination);
-            if (!source || !destination) return null;
+            const points = edgeRoutes.get(rel.id);
+            if (!points) return null;
             return (
               <RelationshipEdge
                 key={rel.id}
                 relationship={rel}
-                sourceBox={rectOf(source)}
-                destinationBox={rectOf(destination)}
+                points={points}
                 isSelected={diagram.isSelected({ kind: 'relationship', id: rel.id })}
                 onSelect={() => diagram.select({ kind: 'relationship', id: rel.id })}
                 onUpdateLabel={(label) => diagram.updateRelationship(rel.id, { label })}
@@ -400,6 +334,13 @@ export function Canvas() {
           />
         )}
       </div>
+      <CanvasScrollbars
+        viewportRef={viewportRef}
+        pan={diagram.pan}
+        zoom={diagram.zoom}
+        contentBounds={diagram.getContentBounds()}
+        onPan={diagram.setPan}
+      />
     </div>
   );
 }

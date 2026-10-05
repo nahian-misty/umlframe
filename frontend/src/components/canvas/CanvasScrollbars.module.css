@@ -1,0 +1,43 @@
+.track {
+  position: absolute;
+  z-index: 6;
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  border-radius: 6px;
+  touch-action: none;
+}
+
+.horizontal {
+  left: 0;
+  right: 12px;
+  bottom: 0;
+  height: 10px;
+}
+
+.vertical {
+  top: 0;
+  bottom: 12px;
+  right: 0;
+  width: 10px;
+}
+
+.thumb {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-text) 35%, transparent);
+  border-radius: 6px;
+  cursor: grab;
+}
+
+.horizontal .thumb {
+  top: 1px;
+  bottom: 1px;
+}
+
+.vertical .thumb {
+  left: 1px;
+  right: 1px;
+}
+
+.thumb:hover,
+.thumb:active {
+  background: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
