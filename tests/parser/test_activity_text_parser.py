@@ -57,3 +57,17 @@ def test_classify_guard_strips_trailing_punctuation():
 def test_classify_guard_unreadable_returns_empty():
     for token in ("", "maybe", "x > 0", "???"):
         assert classify_guard(token) == ""
+
+
+def test_classify_guard_ignores_punctuation_from_nearby_lines():
+    assert classify_guard("\u201cno") == "no"
+    assert classify_guard("~ yes.") == "yes"
+
+
+def test_classify_guard_tolerates_one_character_ocr_slip():
+    assert classify_guard("ves") == "yes"
+
+
+def test_classify_guard_rejects_unrelated_text():
+    assert classify_guard("else") == ""
+    assert classify_guard("") == ""

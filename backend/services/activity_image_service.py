@@ -22,8 +22,12 @@ from backend.cv.activity_shape_detector import (
     detect_activity_connectors,
     detect_activity_shapes,
 )
-from backend.cv.preprocessor import preprocess
-from backend.ocr.activity_extractor import GrayImage, extract_activity_labels, extract_guard_label
+from backend.cv.preprocessor import preprocess_ink
+from backend.ocr.activity_extractor import (
+    GrayImage,
+    extract_activity_labels,
+    extract_edge_guard_candidates,
+)
 from backend.parser.activity_text_parser import classify_guard, normalize_label
 from backend.schemas.activity import ActivityDocument, ActivityEdge, ActivityNode, ActivityNodeType
 from backend.schemas.uml import Position, Size
@@ -31,6 +35,7 @@ from backend.schemas.uml import Position, Size
 # A connector endpoint farther than this from every shape is treated as
 # dangling (not a real connection) rather than snapped to a distant shape.
 _MAX_ENDPOINT_GAP = 45.0
+
 
 # Vertical slack allowed before a back edge pointing downward is considered a
 # violation of the top-to-bottom drawing convention.
@@ -53,7 +58,7 @@ class _UndirectedEdge:
 
 def activity_image_to_document(image_bytes: bytes) -> ActivityDocument:
     """Full forward pipeline: activity-diagram image bytes -> ActivityDocument."""
-    _, gray, binary = preprocess(image_bytes)
+    _, gray, binary = preprocess_ink(image_bytes)
 
     shapes = detect_activity_shapes(binary)
     if not shapes:
@@ -63,7 +68,7 @@ def activity_image_to_document(image_bytes: bytes) -> ActivityDocument:
     adjacency = _build_adjacency(connectors, shapes)
 
     labels = extract_activity_labels(gray, shapes)
-    directed = _orient_edges(shapes, adjacency)
+    directed = _orient_edges(shapes, adjacency, connectors)
     node_types = _resolve_node_types(shapes, directed)
 
     nodes = [
@@ -125,13 +130,16 @@ def _point_to_box_edge_dist(px: int, py: int, shape: ActivityShape) -> float:
 
 
 def _orient_edges(
-    shapes: list[ActivityShape], adjacency: list[_UndirectedEdge]
-) -> list[tuple[int, int]]:
+    shapes: list[ActivityShape],
+    adjacency: list[_UndirectedEdge],
+    connectors: list[ActivityConnector],
+) -> list[tuple[int, int, int]]:
+    """Directed edges as (source shape, target shape, connector index). The connector
+    index is kept so an edge's guard label is read from its own line even when a
+    decision and its loop body are joined by two (forward and back) connectors."""
     starts = [i for i, s in enumerate(shapes) if s.kind == "start"]
     if len(starts) != 1:
-        raise ValueError(
-            f"Activity diagram must have exactly one start node, found {len(starts)}."
-        )
+        raise ValueError(f"Activity diagram must have exactly one start node, found {len(starts)}.")
     start = starts[0]
 
     # neighbour lists carry the connector index so parallel edges stay distinct
@@ -143,7 +151,7 @@ def _orient_edges(
 
     hops = _hop_distances(start, neighbours, len(shapes))
 
-    directed: list[tuple[int, int]] = []
+    directed: list[tuple[int, int, int]] = []
     visited: set[int] = set()
     on_stack: set[int] = set()
     processed: set[int] = set()
@@ -151,7 +159,13 @@ def _orient_edges(
     def dfs(u: int) -> None:
         visited.add(u)
         on_stack.add(u)
-        for v, connector in sorted(neighbours[u]):
+        # Neighbours in shape order; among parallel connectors to the same shape
+        # (a decision and its loop body: forward edge plus the back edge) the shorter
+        # one is taken first, so the straight forward edge is never mistaken for the
+        # long curved back edge.
+        for v, connector in sorted(
+            neighbours[u], key=lambda n: (n[0], _connector_length(connectors[n[1]]), n[1])
+        ):
             if connector in processed:
                 continue
             if v not in visited:
@@ -160,11 +174,11 @@ def _orient_edges(
                 # let v be reached later on its own shorter path.
                 if hops[v] > hops[u]:
                     processed.add(connector)
-                    directed.append((u, v))
+                    directed.append((u, v, connector))
                     dfs(v)
                 else:
                     processed.add(connector)
-                    directed.append((v, u))
+                    directed.append((v, u, connector))
             elif v in on_stack:
                 processed.add(connector)
                 if shapes[v].y > shapes[u].y + _BACK_EDGE_Y_TOLERANCE:
@@ -172,10 +186,10 @@ def _orient_edges(
                         "Detected a back edge pointing downward, which violates the "
                         "top-to-bottom activity-diagram convention."
                     )
-                directed.append((u, v))  # loop back edge
+                directed.append((u, v, connector))  # loop back edge
             else:
                 processed.add(connector)
-                directed.append((u, v))  # forward / cross edge (e.g. an if/else merge)
+                directed.append((u, v, connector))  # forward / cross edge (e.g. an if/else merge)
         on_stack.discard(u)
 
     dfs(start)
@@ -185,6 +199,10 @@ def _orient_edges(
         raise ValueError(f"Nodes {unreachable} are not reachable from the start node.")
 
     return directed
+
+
+def _connector_length(connector: ActivityConnector) -> float:
+    return math.hypot(connector.x2 - connector.x1, connector.y2 - connector.y1)
 
 
 def _hop_distances(
@@ -205,11 +223,11 @@ def _hop_distances(
 
 
 def _resolve_node_types(
-    shapes: list[ActivityShape], directed: list[tuple[int, int]]
+    shapes: list[ActivityShape], directed: list[tuple[int, int, int]]
 ) -> list[ActivityNodeType]:
     out_degree = [0] * len(shapes)
     in_degree = [0] * len(shapes)
-    for src, dst in directed:
+    for src, dst, _ in directed:
         out_degree[src] += 1
         in_degree[dst] += 1
 
@@ -230,46 +248,24 @@ def _resolve_node_types(
 
 
 def _build_edges(
-    directed: list[tuple[int, int]],
+    directed: list[tuple[int, int, int]],
     shapes: list[ActivityShape],
     node_types: list[ActivityNodeType],
     connectors: list[ActivityConnector],
     gray: GrayImage,
 ) -> list[ActivityEdge]:
     edges: list[ActivityEdge] = []
-    for n, (src, dst) in enumerate(directed, start=1):
+    for n, (src, dst, connector_index) in enumerate(directed, start=1):
         label = ""
         if node_types[src] == ActivityNodeType.DECISION:
-            connector = _connector_for_pair(src, dst, shapes, connectors)
-            if connector is not None:
-                label = classify_guard(
-                    extract_guard_label(
-                        gray, connector.x1, connector.y1, connector.x2, connector.y2
-                    )
-                )
+            candidates = extract_edge_guard_candidates(
+                gray, shapes, connectors[connector_index], shapes[dst]
+            )
+            label = next((guard for guard in map(classify_guard, candidates) if guard), "")
         edges.append(
             ActivityEdge(id=f"e{n}", source=_node_id(src), target=_node_id(dst), label=label)
         )
     return edges
-
-
-def _connector_for_pair(
-    a: int, b: int, shapes: list[ActivityShape], connectors: list[ActivityConnector]
-) -> ActivityConnector | None:
-    best: ActivityConnector | None = None
-    best_score = _MAX_ENDPOINT_GAP * 2
-    for connector in connectors:
-        d1 = _point_to_box_edge_dist(
-            connector.x1, connector.y1, shapes[a]
-        ) + _point_to_box_edge_dist(connector.x2, connector.y2, shapes[b])
-        d2 = _point_to_box_edge_dist(
-            connector.x1, connector.y1, shapes[b]
-        ) + _point_to_box_edge_dist(connector.x2, connector.y2, shapes[a])
-        score = min(d1, d2)
-        if score < best_score:
-            best_score = score
-            best = connector
-    return best
 
 
 def _node_id(index: int) -> str:

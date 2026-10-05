@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 
 
 def load_image(image_bytes: bytes) -> np.ndarray:
@@ -31,3 +32,53 @@ def preprocess(image_bytes: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     gray = to_grayscale(color)
     binary = to_binary(gray)
     return color, gray, binary
+
+
+# ---------------------------------------------------------------------------
+# Screenshots and canvas exports (UI-drawn diagrams, as opposed to clean renders)
+# ---------------------------------------------------------------------------
+
+# Grey levels: outlines up to this brightness count as ink; never go above the ceiling
+# or faint grid lines (~#e2e2e8) would become ink too.
+INK_FLOOR = 200
+INK_CEILING = 225
+BGRA_CHANNELS = 4
+ALPHA_OPAQUE = 255.0
+
+
+def flatten_alpha(image_bytes: bytes) -> bytes:
+    """Composite a transparent PNG onto white. OpenCV decodes transparency as black,
+    which would turn a transparent-background export into one solid dark page."""
+    decoded = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+    if decoded is None or decoded.ndim != 3 or decoded.shape[2] != BGRA_CHANNELS:
+        return image_bytes
+    alpha = decoded[:, :, 3:4].astype(np.float32) / ALPHA_OPAQUE
+    colour = decoded[:, :, :3].astype(np.float32)
+    flattened = (colour * alpha + ALPHA_OPAQUE * (1.0 - alpha)).astype(np.uint8)
+    ok, encoded = cv2.imencode(".png", flattened)
+    return encoded.tobytes() if ok else image_bytes
+
+
+def ink_binary(gray: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Binary-inverted image where outlines drawn in light gray still count as ink.
+
+    Otsu alone splits dark text from the page, which can put a mid-gray outline
+    (a common UI border colour) on the background side and erase the node
+    entirely. Using the brighter of Otsu and a fixed floor keeps those outlines
+    while still excluding near-white grid lines and shadows. Thresholded
+    unblurred: blurring a 2px light-grey outline pushes it back above the cutoff."""
+    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    threshold = min(INK_CEILING, max(otsu, INK_FLOOR))
+    _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    return np.asarray(cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel), dtype=np.uint8)
+
+
+def preprocess_ink(
+    image_bytes: bytes,
+) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], npt.NDArray[np.uint8]]:
+    """Like preprocess(), for diagrams exported from the editor: transparency is
+    flattened onto white and light-grey outlines are kept as ink."""
+    color = load_image(flatten_alpha(image_bytes))
+    gray = to_grayscale(color)
+    return color, gray, ink_binary(gray)

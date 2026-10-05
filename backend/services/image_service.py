@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from backend.cv.preprocessor import preprocess
+from backend.cv.preprocessor import preprocess_ink
 from backend.cv.shape_detector import ClassBox, RelationshipLine, detect_shapes
 from backend.ocr.extractor import extract_class_text
 from backend.parser.text_parser import parse_attribute_line, parse_class_name, parse_method_line
@@ -25,7 +25,7 @@ _DEFAULT_MULTIPLICITY = Multiplicity(source="1", destination="1")
 
 def image_to_document(image_bytes: bytes) -> UmlDocument:
     """Full forward pipeline: image bytes → validated UmlDocument."""
-    color, gray, binary = preprocess(image_bytes)
+    color, gray, binary = preprocess_ink(image_bytes)
     shapes = detect_shapes(binary)
 
     classes = _build_classes(gray, shapes.class_boxes)

@@ -167,3 +167,43 @@ def test_while_loop_back_edge_is_structurable():
 
     ir = structure_activity(doc)
     assert len(ir) == 1 and isinstance(ir[0], IRWhile)
+
+
+# ---------------------------------------------------------------------------
+# Inputs a real canvas export produces
+# ---------------------------------------------------------------------------
+
+
+def _rgba_png_bytes(img) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _two_node_diagram(background, outline, line):
+    img = Image.new("RGBA", (400, 420), background)
+    d = ImageDraw.Draw(img)
+    d.ellipse([180, 30, 220, 70], fill=(29, 29, 35, 255))  # start
+    d.line([200, 70, 200, 150], fill=line, width=3)
+    d.rounded_rectangle([90, 150, 310, 230], radius=10, outline=outline, width=3)
+    d.line([200, 230, 200, 330], fill=line, width=3)
+    d.ellipse([180, 330, 224, 374], outline=(29, 29, 35, 255), width=4)  # end
+    return img
+
+
+def test_transparent_background_png_is_read_as_a_white_page():
+    img = _two_node_diagram((0, 0, 0, 0), (29, 29, 35, 255), (107, 107, 118, 255))
+
+    document = activity_image_to_document(_rgba_png_bytes(img))
+
+    assert [n.type.value for n in document.nodes] == ["start", "action", "end"]
+    assert len(document.edges) == 2
+
+
+def test_light_grey_outlines_still_count_as_shapes():
+    img = _two_node_diagram((255, 255, 255, 255), (168, 168, 179, 255), (107, 107, 118, 255))
+
+    document = activity_image_to_document(_rgba_png_bytes(img))
+
+    assert [n.type.value for n in document.nodes] == ["start", "action", "end"]
+    assert len(document.edges) == 2
