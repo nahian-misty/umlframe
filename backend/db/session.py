@@ -32,6 +32,14 @@ def add_missing_project_columns(bind: Engine) -> None:
         backfill_project_types(bind)
 
 
+def add_missing_user_columns(bind: Engine) -> None:
+    """Add user columns introduced after a database was first created."""
+    existing = {column["name"] for column in inspect(bind).get_columns("users")}
+    if "password_changed_at" not in existing:
+        with bind.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN password_changed_at DATETIME"))
+
+
 def backfill_project_types(bind: Engine) -> None:
     """Existing projects predate project types: one that only ever held an activity diagram
     (an activity document and no classes) is an activity project, everything else stays UML."""
@@ -50,6 +58,7 @@ def backfill_project_types(bind: Engine) -> None:
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     add_missing_project_columns(engine)
+    add_missing_user_columns(engine)
 
 
 def get_db() -> Iterator[Session]:

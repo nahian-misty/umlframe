@@ -245,3 +245,14 @@ def test_code_inputs_round_trip_and_survive_unrelated_update(db_session):
     renamed = project_service.update_project(db_session, user.id, project.id, "Q", None)
     assert CodeInputs.model_validate_json(renamed.code_inputs) == inputs
 
+
+def test_add_missing_user_columns_upgrades_old_schema():
+    from backend.db.session import add_missing_user_columns
+
+    old_engine = create_engine("sqlite://")
+    with old_engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)"))
+    add_missing_user_columns(old_engine)
+    add_missing_user_columns(old_engine)
+    columns = {column["name"] for column in inspect(old_engine).get_columns("users")}
+    assert "password_changed_at" in columns

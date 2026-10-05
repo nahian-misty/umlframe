@@ -17,6 +17,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Access tokens issued before this moment are rejected (set when the password changes).
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     projects: Mapped[list[Project]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
