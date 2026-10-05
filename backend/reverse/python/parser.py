@@ -40,6 +40,19 @@ _CONTAINER_NEUTRAL_MAP = {
 # Outer (neutral) container names treated as "many" for multiplicity inference.
 _MANY_CONTAINERS = {"List", "Set"}
 
+# Builtin constructors / literal node types whose result type is provable from the
+# expression alone (`self.tags = []`, `self.label = str(x)`).
+_BUILTIN_CALL_TYPES = {
+    "str": "String", "int": "int", "float": "float", "bool": "bool",
+    "list": "List", "set": "Set", "frozenset": "Set", "tuple": "List", "dict": "Map",
+}
+_LITERAL_NODE_TYPES: dict[type, str] = {
+    ast.List: "List", ast.ListComp: "List", ast.Tuple: "List",
+    ast.Set: "Set", ast.SetComp: "Set",
+    ast.Dict: "Map", ast.DictComp: "Map",
+    ast.JoinedStr: "String",
+}
+
 _PRIMITIVE_TYPES: dict[type, str] = {
     bool: "bool",
     int: "int",
@@ -115,7 +128,7 @@ def _build_class(
         if info.target_class == node.name:
             continue  # self-reference, not a UML relationship
         owned_targets.add(info.target_class)
-        rel_type = RelationshipType.COMPOSITION if info.origin == "instantiation" else RelationshipType.AGGREGATION
+        rel_type = _attribute_relationship_type(info)
         edges.append(_RelEdge(class_id, class_ids[info.target_class], rel_type, info.many))
 
     methods: list[Method] = []
@@ -138,6 +151,14 @@ def _build_class(
         size=size,
     )
     return uml_class, edges
+
+
+def _attribute_relationship_type(info: _AttrRelInfo) -> RelationshipType:
+    """Created by the owner -> composition; a held collection -> aggregation; a held
+    single reference (passed in, not created) is a plain association."""
+    if info.origin == "instantiation":
+        return RelationshipType.COMPOSITION
+    return RelationshipType.AGGREGATION if info.many else RelationshipType.ASSOCIATION
 
 
 def _find_init(node: ast.ClassDef) -> ast.FunctionDef | None:
@@ -307,9 +328,20 @@ def _infer_from_value(
             (target,) = refs
             datatype = _annotation_to_str(annotation)
             return datatype, "param-passthrough", target, _is_many(datatype)
+        # An annotated parameter assigned straight through keeps its declared type
+        # (`def __init__(self, name: str): self.name = name` is a String, not an object).
+        return _annotation_to_str(annotation), None, None, False
 
     if isinstance(value, ast.Constant):
         return _literal_datatype(value.value), None, None, False
+
+    if type(value) in _LITERAL_NODE_TYPES:
+        return _LITERAL_NODE_TYPES[type(value)], None, None, False
+
+    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
+        builtin_type = _BUILTIN_CALL_TYPES.get(value.func.id)
+        if builtin_type is not None:
+            return builtin_type, None, None, False
 
     return "object", None, None, False
 
@@ -460,6 +492,9 @@ def _annotation_to_str(node: ast.expr) -> str:
 
 
 def _to_neutral_type(raw: str) -> str:
+    if " | " in raw and "[" not in raw:
+        parts = (part.strip() for part in raw.split("|"))
+        return " | ".join(part if part == "None" else _to_neutral_type(part) for part in parts)
     if "[" in raw and raw.endswith("]"):
         outer, _, inner = raw.partition("[")
         outer = outer.strip()
