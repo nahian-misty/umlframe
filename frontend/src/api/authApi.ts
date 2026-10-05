@@ -38,6 +38,19 @@ export async function login(email: string, password: string): Promise<AuthResult
   return fromTokenResponse(response);
 }
 
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<AuthResult> {
+  const response = await apiFetch<TokenResponse>('/api/auth/change-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  return fromTokenResponse(response);
+}
+
 export async function logout(token: string): Promise<void> {
   await apiFetch<{ status: string }>('/api/auth/logout', {
     method: 'POST',
