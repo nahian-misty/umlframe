@@ -14,17 +14,24 @@ from backend.schemas.uml import UmlDocument
 class ReverseLanguageConfig:
     parse: Callable[[str], UmlDocument]
     extract_control_flow: Callable[[str, str, str], ActivityDocument]
+    list_methods: Callable[[str], list[tuple[str, str]]]
 
 
 REGISTRY: dict[str, ReverseLanguageConfig] = {
     "python": ReverseLanguageConfig(
-        parse=python_parser.parse, extract_control_flow=python_parser.extract_control_flow
+        parse=python_parser.parse,
+        extract_control_flow=python_parser.extract_control_flow,
+        list_methods=python_parser.list_methods,
     ),
     "java": ReverseLanguageConfig(
-        parse=java_parser.parse, extract_control_flow=java_parser.extract_control_flow
+        parse=java_parser.parse,
+        extract_control_flow=java_parser.extract_control_flow,
+        list_methods=java_parser.list_methods,
     ),
     "javascript": ReverseLanguageConfig(
-        parse=javascript_parser.parse, extract_control_flow=javascript_parser.extract_control_flow
+        parse=javascript_parser.parse,
+        extract_control_flow=javascript_parser.extract_control_flow,
+        list_methods=javascript_parser.list_methods,
     ),
 }
 

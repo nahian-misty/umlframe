@@ -110,3 +110,22 @@ def test_reverse_unknown_method_name_returns_422():
         },
     )
     assert resp.status_code == 422
+
+
+def test_reverse_control_flows_returns_every_method():
+    source = "class A:\n    def one(self):\n        a()\n    def two(self):\n        b()\n"
+    resp = client.post("/api/reverse-control-flows", json={"source": source, "language": "python"})
+    assert resp.status_code == 200
+    methods = resp.json()["methods"]
+    assert [(m["class_name"], m["method_name"]) for m in methods] == [("A", "one"), ("A", "two")]
+    assert methods[0]["control_flow"]["nodes"]
+
+
+def test_reverse_control_flows_without_methods_returns_422():
+    resp = client.post("/api/reverse-control-flows", json={"source": "class A: pass", "language": "python"})
+    assert resp.status_code == 422
+
+
+def test_reverse_control_flows_unsupported_language_returns_422():
+    resp = client.post("/api/reverse-control-flows", json={"source": "x", "language": "cobol"})
+    assert resp.status_code == 422

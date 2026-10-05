@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 
-from backend.models.requests import ReverseRequest
-from backend.models.responses import ReverseResponse
+from backend.models.requests import ControlFlowsRequest, ReverseRequest
+from backend.models.responses import ControlFlowsResponse, ReverseResponse
 from backend.services import reverse_service
 
 
@@ -30,3 +30,15 @@ async def reverse_source(request: ReverseRequest) -> ReverseResponse:
             ) from exc
 
     return ReverseResponse(document=document, control_flow=control_flow)
+
+
+async def reverse_control_flows(request: ControlFlowsRequest) -> ControlFlowsResponse:
+    try:
+        methods = reverse_service.source_to_control_flows(request.source, request.language)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Control-flow extraction failed: {type(exc).__name__}: {exc}"
+        ) from exc
+    return ControlFlowsResponse(methods=methods)

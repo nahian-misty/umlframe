@@ -7,6 +7,12 @@ from backend.schemas.activity import ActivityNodeType
 def _nodes_by_type(doc, node_type):
     return [n for n in doc.nodes if n.type == node_type]
 
+def _flow(doc):
+    """The diagram as {(source label, edge label, target label)}; START/END are named."""
+    names = {n.id: n.label or n.type.value for n in doc.nodes}
+    return {(names[e.source], e.label, names[e.target]) for e in doc.edges}
+
+
 
 def _edge(doc, source_id, target_id):
     return next(e for e in doc.edges if e.source == source_id and e.target == target_id)
@@ -117,7 +123,7 @@ public class Calc {
     assert any(e.source == yes_edge.target and e.target == decision.id for e in doc.edges)
 
 
-def test_try_catch_renders_as_single_opaque_action():
+def test_try_catch_branches_on_the_exception_instead_of_one_opaque_action():
     source = """
 public class Calc {
     public int safeDiv(int a, int b) {
@@ -130,9 +136,42 @@ public class Calc {
 }
 """
     doc = extract_control_flow(source, "Calc", "safeDiv")
-    actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
-    assert len(actions) == 1
-    assert actions[0].label == "try"
+    assert _flow(doc) == {
+        ("start", "", "catch ArithmeticException?"),
+        ("catch ArithmeticException?", "yes", "return 0"),
+        ("catch ArithmeticException?", "no", "return a / b"),
+        ("return 0", "", "end"),
+        ("return a / b", "", "end"),
+    }
+
+
+def test_try_multi_catch_finally_chains_handlers_and_merges_into_finally():
+    source = """
+class S {
+    void f() {
+        try { a(); }
+        catch (IOException e) { b(); }
+        catch (RuntimeException e) { c(); }
+        finally { d(); }
+        e();
+    }
+}
+"""
+    assert _flow(extract_control_flow(source, "S", "f")) == {
+        ("start", "", "exception thrown?"),
+        ("exception thrown?", "yes", "catch IOException?"),
+        ("exception thrown?", "no", "a()"),
+        ("catch IOException?", "yes", "b()"),
+        ("catch IOException?", "no", "catch RuntimeException?"),
+        ("catch RuntimeException?", "yes", "c()"),
+        ("catch RuntimeException?", "no", "finally"),
+        ("a()", "", "finally"),
+        ("b()", "", "finally"),
+        ("c()", "", "finally"),
+        ("finally", "", "d()"),
+        ("d()", "", "e()"),
+        ("e()", "", "end"),
+    }
 
 
 def test_class_not_found_raises_value_error():
@@ -156,3 +195,14 @@ def test_abstract_method_raises_value_error():
 def test_invalid_syntax_raises_value_error():
     with pytest.raises(ValueError):
         extract_control_flow("public class Calc { public void run( }", "Calc", "run")
+
+
+def test_list_methods_skips_abstract_and_constructors():
+    from backend.reverse.java.parser import list_methods
+
+    source = (
+        "abstract class Shape {\n  Shape() {}\n  abstract double area();\n"
+        "  void draw() { }\n  void draw(int x) { }\n}\n"
+        "class Circle extends Shape {\n  double area() { return 1; }\n}\n"
+    )
+    assert list_methods(source) == [("Shape", "draw"), ("Circle", "area")]

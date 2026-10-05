@@ -290,6 +290,24 @@ class _CfgBuilder:
         self.edges.append(ActivityEdge(id=f"e{self._edge_count}", source=source, target=target, label=label))
 
 
+def list_methods(source: str) -> list[tuple[str, str]]:
+    """(class name, method name) for every non-constructor method of every top-level class."""
+    try:
+        tree = esprima.parseScript(source)
+    except EsprimaError as exc:
+        raise ValueError(f"Invalid JavaScript source: {exc}") from exc
+
+    methods: list[tuple[str, str]] = []
+    for node in tree.body:
+        if node.type != "ClassDeclaration":
+            continue
+        for member in node.body.body:
+            name = getattr(member.key, "name", None) if member.type == "MethodDefinition" else None
+            if name and member.kind != "constructor" and (node.id.name, name) not in methods:
+                methods.append((node.id.name, name))
+    return methods
+
+
 def extract_control_flow(source: str, class_name: str, method_name: str) -> ActivityDocument:
     """Reverse-engineer one method's control flow into an ActivityDocument."""
     try:
@@ -394,6 +412,18 @@ def _walk_block(stmts: list[Any], entry: _OpenTails, builder: _CfgBuilder, end_i
                 builder.add_edge(tail_id, cond_id, edge_label)
             current = [(cond_id, "no")]
 
+        elif node_type == "TryStatement":
+            flush()
+            handlers = [] if stmt.handler is None else [stmt.handler]
+            current = _walk_try(
+                _as_stmt_list(stmt.block),
+                [_as_stmt_list(h.body) for h in handlers],
+                _as_stmt_list(stmt.finalizer),
+                current,
+                builder,
+                end_id,
+            )
+
         elif node_type in ("ReturnStatement", "ThrowStatement"):
             keyword = "return" if node_type == "ReturnStatement" else "throw"
             expr = stmt.argument
@@ -412,6 +442,38 @@ def _walk_block(stmts: list[Any], entry: _OpenTails, builder: _CfgBuilder, end_i
 
     flush()
     return current
+
+
+def _walk_try(
+    body: list[Any],
+    handlers: list[list[Any]],
+    finalbody: list[Any],
+    entry: _OpenTails,
+    builder: _CfgBuilder,
+    end_id: str,
+) -> _OpenTails:
+    """try/catch/finally as branches: a decision splits the exception path (the catch block)
+    from the normal path (the body); both merge into a `finally` node. JavaScript has a single
+    untyped catch, so there is no handler chain. A `return` inside the try still goes straight
+    to END, bypassing the finally."""
+    handler_tails: _OpenTails = []
+    normal_entry = entry
+
+    if handlers:
+        root_id = builder.add_node(ActivityNodeType.DECISION, "exception thrown?")
+        for src_id, edge_label in entry:
+            builder.add_edge(src_id, root_id, edge_label)
+        normal_entry = [(root_id, "no")]
+        handler_tails = _walk_block(handlers[0], [(root_id, "yes")], builder, end_id)
+
+    merged = _walk_block(body, normal_entry, builder, end_id) + handler_tails
+
+    if not finalbody or not merged:
+        return merged
+    finally_id = builder.add_node(ActivityNodeType.ACTION, "finally")
+    for src_id, edge_label in merged:
+        builder.add_edge(src_id, finally_id, edge_label)
+    return _walk_block(finalbody, [(finally_id, "")], builder, end_id)
 
 
 def _as_stmt_list(node: Any) -> list[Any]:

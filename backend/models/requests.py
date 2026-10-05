@@ -53,6 +53,18 @@ class ReverseRequest(BaseModel):
         return v
 
 
+class ControlFlowsRequest(BaseModel):
+    source: str
+    language: str
+
+    @field_validator("language")
+    @classmethod
+    def language_must_be_supported(cls, v: str) -> str:
+        if v not in REVERSE_SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language '{v}'. Supported: {REVERSE_SUPPORTED_LANGUAGES}")
+        return v
+
+
 class JsonToMermaidRequest(BaseModel):
     diagram_type: Literal["class", "activity"] = "class"
     document: UmlDocument | None = None

@@ -558,7 +558,7 @@ _NODE_WIDTH = 160.0
 _NODE_HEIGHT = 80.0
 _NODE_V_GAP = 40.0
 
-_OPAQUE_COMPOUND_TYPES = (ast.Try, ast.Match, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_OPAQUE_COMPOUND_TYPES = (ast.Match, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 # (node_id, edge_label) pairs: open edges waiting to be drawn into whichever
 # node comes next.
@@ -590,6 +590,25 @@ class _CfgBuilder:
     def add_edge(self, source: str, target: str, label: str = "") -> None:
         self._edge_count += 1
         self.edges.append(ActivityEdge(id=f"e{self._edge_count}", source=source, target=target, label=label))
+
+
+def list_methods(source: str) -> list[tuple[str, str]]:
+    """(class name, method name) for every non-constructor method of every top-level class."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise ValueError(f"Invalid Python source: {exc}") from exc
+
+    methods: list[tuple[str, str]] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if stmt.name != "__init__" and (node.name, stmt.name) not in methods:
+                methods.append((node.name, stmt.name))
+    return methods
 
 
 def extract_control_flow(source: str, class_name: str, method_name: str) -> ActivityDocument:
@@ -677,6 +696,15 @@ def _walk_block(
                 builder.add_edge(tail_id, cond_id, edge_label)  # back edge
             current = [(cond_id, "no")]
 
+        elif isinstance(stmt, ast.Try):
+            flush()
+            handlers = [
+                (ast.unparse(h.type) if h.type is not None else None, h.body) for h in stmt.handlers
+            ]
+            current = _walk_try(
+                stmt.body, handlers, stmt.orelse, stmt.finalbody, current, builder, end_id
+            )
+
         elif isinstance(stmt, ast.Return):
             buffer.append(f"return {ast.unparse(stmt.value)}" if stmt.value is not None else "return")
             flush()
@@ -697,6 +725,61 @@ def _walk_block(
 
     flush()
     return current
+
+
+def _walk_try(
+    body: list[ast.stmt],
+    handlers: list[tuple[str | None, list[ast.stmt]]],
+    orelse: list[ast.stmt],
+    finalbody: list[ast.stmt],
+    entry: _OpenTails,
+    builder: _CfgBuilder,
+    end_id: str,
+) -> _OpenTails:
+    """try/except/else/finally as branches: a decision splits the exception path (one branch
+    per handler) from the normal path (body, then else); both merge into a `finally` node.
+    A `return` inside the try still goes straight to END, bypassing the finally."""
+    handler_tails: _OpenTails = []
+    unmatched: _OpenTails = []
+    normal_entry = entry
+
+    if handlers:
+        only_typed = handlers[0][0] if len(handlers) == 1 else None
+        root_label = f"except {only_typed}?" if only_typed else "exception raised?"
+        root_id = builder.add_node(ActivityNodeType.DECISION, _truncate(root_label))
+        for src_id, edge_label in entry:
+            builder.add_edge(src_id, root_id, edge_label)
+        normal_entry = [(root_id, "no")]
+
+        pending: _OpenTails = [(root_id, "yes")]
+        if len(handlers) == 1:
+            handler_tails = _walk_block(handlers[0][1], pending, builder, end_id)
+            pending = []
+        else:
+            for exc_type, handler_body in handlers:
+                if exc_type is None:  # bare `except:` catches whatever is left
+                    handler_tails += _walk_block(handler_body, pending, builder, end_id)
+                    pending = []
+                    break
+                check_id = builder.add_node(
+                    ActivityNodeType.DECISION, _truncate(f"except {exc_type}?")
+                )
+                for src_id, edge_label in pending:
+                    builder.add_edge(src_id, check_id, edge_label)
+                handler_tails += _walk_block(handler_body, [(check_id, "yes")], builder, end_id)
+                pending = [(check_id, "no")]
+        unmatched = pending  # an exception no handler matches still runs the finally
+
+    body_tails = _walk_block(body, normal_entry, builder, end_id)
+    normal_tails = _walk_block(orelse, body_tails, builder, end_id) if orelse else body_tails
+    merged = normal_tails + handler_tails + unmatched
+
+    if not finalbody or not merged:
+        return merged
+    finally_id = builder.add_node(ActivityNodeType.ACTION, "finally")
+    for src_id, edge_label in merged:
+        builder.add_edge(src_id, finally_id, edge_label)
+    return _walk_block(finalbody, [(finally_id, "")], builder, end_id)
 
 
 def _for_label(stmt: ast.For | ast.AsyncFor) -> str:

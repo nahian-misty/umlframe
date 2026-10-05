@@ -7,6 +7,12 @@ from backend.schemas.activity import ActivityNodeType
 def _nodes_by_type(doc, node_type):
     return [n for n in doc.nodes if n.type == node_type]
 
+def _flow(doc):
+    """The diagram as {(source label, edge label, target label)}; START/END are named."""
+    names = {n.id: n.label or n.type.value for n in doc.nodes}
+    return {(names[e.source], e.label, names[e.target]) for e in doc.edges}
+
+
 
 def _edge(doc, source_id, target_id):
     return next(e for e in doc.edges if e.source == source_id and e.target == target_id)
@@ -131,7 +137,7 @@ class Calc:
     assert any(e.source == yes_edge.target and e.target == decision.id for e in doc.edges)
 
 
-def test_try_except_renders_as_single_opaque_action():
+def test_try_except_branches_on_the_exception_instead_of_one_opaque_action():
     source = """
 class Calc:
     def safe_div(self, a, b):
@@ -141,9 +147,101 @@ class Calc:
             return 0
 """
     doc = extract_control_flow(source, "Calc", "safe_div")
-    actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
-    assert len(actions) == 1
-    assert actions[0].label == "try"
+    assert _flow(doc) == {
+        ("start", "", "except ZeroDivisionError?"),
+        ("except ZeroDivisionError?", "yes", "return 0"),
+        ("except ZeroDivisionError?", "no", "return a / b"),
+        ("return 0", "", "end"),
+        ("return a / b", "", "end"),
+    }
+
+
+def test_try_except_else_finally_shows_every_part_and_merges_into_finally():
+    source = """
+class S:
+    def f(self):
+        try:
+            a()
+        except KeyError:
+            b()
+        else:
+            c()
+        finally:
+            d()
+        e()
+"""
+    assert _flow(extract_control_flow(source, "S", "f")) == {
+        ("start", "", "except KeyError?"),
+        ("except KeyError?", "yes", "b()"),
+        ("except KeyError?", "no", "a()"),
+        ("a()", "", "c()"),
+        ("c()", "", "finally"),
+        ("b()", "", "finally"),
+        ("finally", "", "d()"),
+        ("d()", "", "e()"),
+        ("e()", "", "end"),
+    }
+
+
+def test_multiple_except_clauses_chain_and_unmatched_exceptions_still_reach_finally():
+    source = """
+class S:
+    def f(self):
+        try:
+            a()
+        except ValueError:
+            b()
+        except TypeError:
+            c()
+        finally:
+            d()
+"""
+    assert _flow(extract_control_flow(source, "S", "f")) == {
+        ("start", "", "exception raised?"),
+        ("exception raised?", "yes", "except ValueError?"),
+        ("exception raised?", "no", "a()"),
+        ("except ValueError?", "yes", "b()"),
+        ("except ValueError?", "no", "except TypeError?"),
+        ("except TypeError?", "yes", "c()"),
+        ("except TypeError?", "no", "finally"),
+        ("a()", "", "finally"),
+        ("b()", "", "finally"),
+        ("c()", "", "finally"),
+        ("finally", "", "d()"),
+        ("d()", "", "end"),
+    }
+
+
+def test_bare_except_ends_the_handler_chain():
+    source = """
+class S:
+    def f(self):
+        try:
+            a()
+        except ValueError:
+            b()
+        except:
+            c()
+"""
+    flow = _flow(extract_control_flow(source, "S", "f"))
+    assert ("except ValueError?", "no", "c()") in flow
+
+
+def test_try_finally_without_handlers_has_no_decision():
+    source = """
+class S:
+    def f(self):
+        try:
+            a()
+        finally:
+            d()
+"""
+    assert _flow(extract_control_flow(source, "S", "f")) == {
+        ("start", "", "a()"),
+        ("a()", "", "finally"),
+        ("finally", "", "d()"),
+        ("d()", "", "end"),
+    }
 
 
 def test_class_not_found_raises_value_error():
@@ -159,3 +257,22 @@ def test_method_not_found_raises_value_error():
 def test_invalid_syntax_raises_value_error():
     with pytest.raises(ValueError):
         extract_control_flow("def foo(:\n    pass\n", "Calc", "run")
+
+
+def test_list_methods_finds_every_method_but_not_the_constructor():
+    from backend.reverse.python.parser import list_methods
+
+    source = (
+        "class A:\n    def __init__(self): pass\n    def one(self): pass\n"
+        "    async def two(self): pass\n\n"
+        "class B:\n    def three(self): pass\n\n"
+        "def free_function(): pass\n"
+    )
+    assert list_methods(source) == [("A", "one"), ("A", "two"), ("B", "three")]
+
+
+def test_list_methods_rejects_invalid_source():
+    from backend.reverse.python.parser import list_methods
+
+    with pytest.raises(ValueError, match="Invalid Python source"):
+        list_methods("class A(:")
