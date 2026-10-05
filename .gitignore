@@ -12,3 +12,9 @@ build/
 .env
 .DS_Store
 *.db
+
+# Documentation and report files kept out of version control
+docs/
+*.docx
+UMLFRAME_OVERVIEW.md
+to_do.md
