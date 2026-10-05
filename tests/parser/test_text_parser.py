@@ -1,4 +1,3 @@
-import pytest
 
 from backend.parser.text_parser import (
     ParsedAttribute,
@@ -7,7 +6,6 @@ from backend.parser.text_parser import (
     parse_class_name,
     parse_method_line,
 )
-
 
 # ---------------------------------------------------------------------------
 # parse_class_name
