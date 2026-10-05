@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from backend.models.project_state import CodeInputs, ProjectType
 from backend.schemas.activity import ActivityDocument, MethodControlFlow
 from backend.schemas.uml import UmlDocument
 
@@ -59,7 +60,10 @@ class TokenResponse(BaseModel):
 class ProjectResponse(BaseModel):
     id: int
     name: str
+    project_type: ProjectType = "uml"
     document: UmlDocument
+    activity_document: ActivityDocument | None = None
+    code_inputs: CodeInputs = Field(default_factory=CodeInputs)
     created_at: datetime
     updated_at: datetime
 
@@ -74,11 +78,16 @@ class ClassBoxSummary(BaseModel):
 class ProjectSummaryResponse(BaseModel):
     id: int
     name: str
+    project_type: ProjectType = "uml"
     updated_at: datetime
     class_count: int
     relationship_count: int
+    node_count: int = 0
     class_boxes: list[ClassBoxSummary]
 
 
 class ProjectListResponse(BaseModel):
     projects: list[ProjectSummaryResponse]
+    total: int = 0
+    limit: int = 0
+    offset: int = 0
