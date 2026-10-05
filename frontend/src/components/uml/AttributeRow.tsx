@@ -42,11 +42,7 @@ export function AttributeRow({ attribute, startExpanded, onChange, onDelete }: A
 
   if (!isExpanded) {
     return (
-      <div
-        className={styles.summary}
-        onClick={() => setIsExpanded(true)}
-        title="Click to edit"
-      >
+      <div className={styles.summary} onClick={() => setIsExpanded(true)} title="Click to edit">
         {summarize(attribute)}
       </div>
     );
