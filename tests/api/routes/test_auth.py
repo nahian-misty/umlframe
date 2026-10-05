@@ -72,3 +72,64 @@ def test_logout_returns_200(client):
     token = register_resp.json()["access_token"]
     resp = client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
+
+
+def _register(client, email="alice@example.com", password="old-password-1") -> dict[str, str]:
+    body = client.post("/api/auth/register", json={"email": email, "password": password}).json()
+    return {"Authorization": f"Bearer {body['access_token']}"}
+
+
+def test_change_password_returns_a_working_token_and_switches_the_login_password(client):
+    headers = _register(client)
+    resp = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "old-password-1", "new_password": "new-password-2"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    new_headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    assert client.get("/api/auth/me", headers=new_headers).status_code == 200
+
+    old_login = client.post(
+        "/api/auth/login", json={"email": "alice@example.com", "password": "old-password-1"}
+    )
+    new_login = client.post(
+        "/api/auth/login", json={"email": "alice@example.com", "password": "new-password-2"}
+    )
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
+
+
+def test_change_password_wrong_current_password_returns_400(client):
+    headers = _register(client)
+    resp = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "nope-nope-nope", "new_password": "new-password-2"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    assert "incorrect" in resp.json()["detail"].lower()
+
+
+def test_change_password_validation_errors_return_422(client):
+    headers = _register(client)
+    short = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "old-password-1", "new_password": "short"},
+        headers=headers,
+    )
+    same = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "old-password-1", "new_password": "old-password-1"},
+        headers=headers,
+    )
+    assert short.status_code == 422
+    assert same.status_code == 422
+
+
+def test_change_password_requires_authentication(client):
+    resp = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "old-password-1", "new_password": "new-password-2"},
+    )
+    assert resp.status_code in (401, 403)

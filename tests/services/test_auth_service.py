@@ -1,8 +1,13 @@
+from datetime import datetime, timedelta, timezone
+
+import jwt as pyjwt
 import pytest
 
+from backend.config import settings
 from backend.services import auth_service
 from backend.services.auth_service import (
     EmailAlreadyRegisteredError,
+    IncorrectPasswordError,
     InvalidCredentialsError,
     InvalidTokenError,
     UserNotFoundError,
@@ -76,3 +81,59 @@ def test_get_user_by_id_not_found_raises(db_session):
 def test_password_never_stored_in_plaintext(db_session):
     user = auth_service.register_user(db_session, "frank@example.com", "supersecret1")
     assert "supersecret1" not in user.hashed_password
+
+
+def _token_issued_seconds_ago(user, seconds: int) -> str:
+    issued = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    payload = {"sub": str(user.id), "iat": issued, "exp": issued + timedelta(hours=1)}
+    return pyjwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def test_change_password_replaces_the_hash_and_login_uses_the_new_one(db_session):
+    user = auth_service.register_user(db_session, "alice@example.com", "old-password-1")
+    old_hash = user.hashed_password
+    auth_service.change_password(db_session, user, "old-password-1", "new-password-2")
+
+    assert user.hashed_password != old_hash
+    assert auth_service.authenticate_user(db_session, "alice@example.com", "new-password-2")
+    with pytest.raises(InvalidCredentialsError):
+        auth_service.authenticate_user(db_session, "alice@example.com", "old-password-1")
+
+
+def test_change_password_with_wrong_current_password_changes_nothing(db_session):
+    user = auth_service.register_user(db_session, "alice@example.com", "old-password-1")
+    old_hash = user.hashed_password
+    with pytest.raises(IncorrectPasswordError):
+        auth_service.change_password(db_session, user, "not-my-password", "new-password-2")
+    assert user.hashed_password == old_hash
+    assert user.password_changed_at is None
+
+
+def test_change_password_rejects_reusing_the_current_password(db_session):
+    user = auth_service.register_user(db_session, "alice@example.com", "old-password-1")
+    with pytest.raises(ValueError, match="different"):
+        auth_service.change_password(db_session, user, "old-password-1", "old-password-1")
+
+
+def test_tokens_issued_before_a_password_change_are_rejected(db_session):
+    user = auth_service.register_user(db_session, "alice@example.com", "old-password-1")
+    old_token = _token_issued_seconds_ago(user, 30)
+    assert auth_service.authenticate_token(db_session, old_token).id == user.id
+
+    auth_service.change_password(db_session, user, "old-password-1", "new-password-2")
+
+    with pytest.raises(InvalidTokenError):
+        auth_service.authenticate_token(db_session, old_token)
+    fresh_token = auth_service.create_access_token(user)
+    assert auth_service.authenticate_token(db_session, fresh_token).id == user.id
+
+
+def test_authenticate_token_rejects_garbage_and_unknown_users(db_session):
+    with pytest.raises(InvalidTokenError):
+        auth_service.authenticate_token(db_session, "garbage")
+    ghost = auth_service.register_user(db_session, "ghost@example.com", "password123")
+    token = auth_service.create_access_token(ghost)
+    db_session.delete(ghost)
+    db_session.commit()
+    with pytest.raises(UserNotFoundError):
+        auth_service.authenticate_token(db_session, token)

@@ -16,7 +16,6 @@ async def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        user_id = auth_service.decode_access_token(credentials.credentials)
-        return auth_service.get_user_by_id(db, user_id)
+        return auth_service.authenticate_token(db, credentials.credentials)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired token") from exc

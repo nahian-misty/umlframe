@@ -5,7 +5,7 @@ from backend.api.controllers import auth_controller
 from backend.api.dependencies.auth import get_current_user
 from backend.db.models import User
 from backend.db.session import get_db
-from backend.models.requests import LoginRequest, RegisterRequest
+from backend.models.requests import ChangePasswordRequest, LoginRequest, RegisterRequest
 from backend.models.responses import TokenResponse, UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -29,3 +29,12 @@ async def logout(current_user: User = Depends(get_current_user)) -> dict[str, st
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return await auth_controller.get_me(current_user)
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    return await auth_controller.change_password(request, current_user, db)
