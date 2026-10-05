@@ -79,6 +79,10 @@ class JsonToMermaidRequest(BaseModel):
         return self
 
 
+class ActivityDiagramImageRequest(BaseModel):
+    activity: ActivityDocument
+
+
 class RegisterRequest(BaseModel):
     email: str
     password: str

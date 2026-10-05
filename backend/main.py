@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.routes import (
     activity_codegen,
     activity_image,
+    activity_render,
     auth,
     codegen,
     image,
@@ -41,3 +42,4 @@ app.include_router(reverse.router)
 app.include_router(mermaid.router)
 app.include_router(activity_codegen.router)
 app.include_router(activity_image.router)
+app.include_router(activity_render.router)

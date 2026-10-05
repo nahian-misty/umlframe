@@ -35,6 +35,12 @@ class MermaidResponse(BaseModel):
     diagram: str
 
 
+class ActivityDiagramImageResponse(BaseModel):
+    # Base64-encoded PNG, keeping this endpoint's body JSON like every other
+    # one in the API, rather than a one-off binary response type.
+    image_base64: str
+
+
 class ErrorResponse(BaseModel):
     error: str
 
