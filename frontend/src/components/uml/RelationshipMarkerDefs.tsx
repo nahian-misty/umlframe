@@ -1,5 +1,11 @@
+import { useCssColors } from '../../hooks/useCssColors';
+
 /** Shared <marker> definitions referenced by every RelationshipEdge's line. Render once per canvas. */
+const MARKER_COLOR_VARS = { text: '--color-text', surface: '--color-surface' };
+const MARKER_STROKE = 1.5;
+
 export function RelationshipMarkerDefs() {
+  const colors = useCssColors(MARKER_COLOR_VARS);
   return (
     <defs>
       <marker
@@ -11,7 +17,7 @@ export function RelationshipMarkerDefs() {
         markerHeight="9"
         orient="auto"
       >
-        <path d="M1,1 L9,5 L1,9" fill="none" stroke="var(--color-text)" strokeWidth="1.5" />
+        <path d="M1,1 L9,5 L1,9" fill="none" stroke={colors.text} strokeWidth={MARKER_STROKE} />
       </marker>
       <marker
         id="triangle-hollow"
@@ -24,9 +30,9 @@ export function RelationshipMarkerDefs() {
       >
         <path
           d="M1,1 L11,6 L1,11 Z"
-          fill="var(--color-surface)"
-          stroke="var(--color-text)"
-          strokeWidth="1.5"
+          fill={colors.surface}
+          stroke={colors.text}
+          strokeWidth={MARKER_STROKE}
         />
       </marker>
       <marker
@@ -40,9 +46,9 @@ export function RelationshipMarkerDefs() {
       >
         <path
           d="M1,6 L6,1 L11,6 L6,11 Z"
-          fill="var(--color-surface)"
-          stroke="var(--color-text)"
-          strokeWidth="1.5"
+          fill={colors.surface}
+          stroke={colors.text}
+          strokeWidth={MARKER_STROKE}
         />
       </marker>
       <marker
@@ -56,9 +62,9 @@ export function RelationshipMarkerDefs() {
       >
         <path
           d="M1,6 L6,1 L11,6 L6,11 Z"
-          fill="var(--color-text)"
-          stroke="var(--color-text)"
-          strokeWidth="1.5"
+          fill={colors.text}
+          stroke={colors.text}
+          strokeWidth={MARKER_STROKE}
         />
       </marker>
     </defs>

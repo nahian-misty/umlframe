@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
+import { useCssColors } from '../../hooks/useCssColors';
 import type { GenericShape } from '../../types/diagram';
 import styles from './ShapeRenderer.module.css';
 
@@ -9,7 +10,10 @@ interface ShapeRendererProps {
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
+const SHAPE_COLOR_VARS = { arrow: '--color-border-strong' };
+
 export function ShapeRenderer({ shape, isSelected, onPointerDown }: ShapeRendererProps) {
+  const colors = useCssColors(SHAPE_COLOR_VARS);
   const { kind, position, size } = shape;
 
   return (
@@ -40,7 +44,7 @@ export function ShapeRenderer({ shape, isSelected, onPointerDown }: ShapeRendere
                 refY="5"
                 orient="auto"
               >
-                <path d="M0,0 L10,5 L0,10" fill="none" stroke="var(--color-border-strong)" />
+                <path d="M0,0 L10,5 L0,10" fill="none" stroke={colors.arrow} />
               </marker>
             </defs>
           )}

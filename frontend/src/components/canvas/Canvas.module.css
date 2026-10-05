@@ -19,7 +19,14 @@
 .viewport[data-active-tool='circle'],
 .viewport[data-active-tool='diamond'],
 .viewport[data-active-tool='line'],
-.viewport[data-active-tool='arrow'] {
+.viewport[data-active-tool='arrow'],
+.viewport[data-active-tool='start'],
+.viewport[data-active-tool='end'],
+.viewport[data-active-tool='action'],
+.viewport[data-active-tool='decision'],
+.viewport[data-active-tool='fork'],
+.viewport[data-active-tool='join'],
+.viewport[data-active-tool='connect'] {
   cursor: crosshair;
 }
 

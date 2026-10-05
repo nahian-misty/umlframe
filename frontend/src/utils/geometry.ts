@@ -75,3 +75,30 @@ export function boundsOfRects(rects: Rect[]): Rect | null {
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
+
+/** Zoom and pan that centre `bounds` inside a viewport of the given size (transform origin 0 0). */
+export function fitViewToBounds(
+  bounds: Rect,
+  viewport: { width: number; height: number },
+  padding: number,
+  minZoom: number,
+  maxZoom: number,
+): { zoom: number; pan: Point } {
+  const availableWidth = Math.max(viewport.width - padding * 2, 1);
+  const availableHeight = Math.max(viewport.height - padding * 2, 1);
+  const zoom = clamp(
+    Math.min(
+      availableWidth / Math.max(bounds.width, 1),
+      availableHeight / Math.max(bounds.height, 1),
+    ),
+    minZoom,
+    maxZoom,
+  );
+  return {
+    zoom,
+    pan: {
+      x: (viewport.width - bounds.width * zoom) / 2 - bounds.x * zoom,
+      y: (viewport.height - bounds.height * zoom) / 2 - bounds.y * zoom,
+    },
+  };
+}
