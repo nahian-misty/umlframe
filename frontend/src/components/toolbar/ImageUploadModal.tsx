@@ -40,7 +40,7 @@ export function ImageUploadModal({ onClose }: ImageUploadModalProps) {
     setError(null);
     try {
       const document = await imageToJson(selectedFile);
-      diagram.loadDocument(document);
+      diagram.loadDocument(document, { undoable: true });
       showToast('Diagram loaded from image', 'success');
       onClose();
     } catch (err) {

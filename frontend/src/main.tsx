@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
+import { ActivityDiagramProvider } from './context/ActivityDiagramContext';
 import { AuthProvider } from './context/AuthContext';
 import { DiagramProvider } from './context/DiagramContext';
 import { ToastProvider } from './components/common/ToastProvider';
@@ -16,8 +17,10 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <ToastProvider>
           <DiagramProvider>
-            <App />
-            <ToastStack />
+            <ActivityDiagramProvider>
+              <App />
+              <ToastStack />
+            </ActivityDiagramProvider>
           </DiagramProvider>
         </ToastProvider>
       </AuthProvider>

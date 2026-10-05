@@ -9,6 +9,10 @@ interface CodeGenerationResponse {
   files: Record<string, string>;
 }
 
+interface ActivityDiagramImageResponse {
+  image_base64: string;
+}
+
 export async function activityImageToJson(file: File): Promise<ActivityDocument> {
   const formData = new FormData();
   formData.append('file', file);
@@ -19,6 +23,21 @@ export async function activityImageToJson(file: File): Promise<ActivityDocument>
     body: formData,
   });
   return result.document;
+}
+
+/**
+ * Renders an ActivityDocument as a PNG using the CV pipeline's own shape
+ * convention (solid-filled start circle, ringed end circle, gapped
+ * connectors) -- unlike the Mermaid preview, this image can be re-uploaded
+ * through Activity Diagram -> Code and successfully re-ingested.
+ */
+export async function activityJsonToImage(activity: ActivityDocument): Promise<string> {
+  const result = await apiFetch<ActivityDiagramImageResponse>('/api/activity-json-to-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ activity }),
+  });
+  return `data:image/png;base64,${result.image_base64}`;
 }
 
 export async function generateActivityCode(

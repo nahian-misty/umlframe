@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 
 import { useCanvas, type UseCanvasResult } from './useCanvas';
 import { useSelection, type UseSelectionResult } from './useSelection';
+import { useUndoableState } from './useUndoableState';
 import { classFromWire, classToWire } from '../components/uml/umlClassSerializer';
 import {
   DEFAULT_CLASS_SIZE,
@@ -48,12 +49,19 @@ export interface UseDiagramResult extends UseCanvasResult, UseSelectionResult {
   deleteSelected: () => void;
 
   toDocument: () => UmlDocument;
-  loadDocument: (doc: UmlDocument) => void;
+  loadDocument: (doc: UmlDocument, options?: { undoable?: boolean }) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  clear: () => void;
   getContentBounds: () => Rect | null;
 }
 
 export function useDiagram(): UseDiagramResult {
-  const [state, setState] = useState<DiagramState>(EMPTY_STATE);
+  const history = useUndoableState<DiagramState>(EMPTY_STATE);
+  const { state, update: setState, reset: resetHistory } = history;
+  const { undo: undoHistory, redo: redoHistory } = history;
   const classSeqRef = useRef(1);
   const relSeqRef = useRef(1);
   const shapeSeqRef = useRef(1);
@@ -76,25 +84,31 @@ export function useDiagram(): UseDiagramResult {
       selection.select({ kind: 'class', id });
       return id;
     },
-    [selection],
+    [selection, setState],
   );
 
   const updateClass = useCallback((id: string, patch: Partial<Omit<UmlClassState, 'id'>>) => {
-    setState((prev) => ({
-      ...prev,
-      classes: prev.classes.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-    }));
-  }, []);
+    setState(
+      (prev) => ({
+        ...prev,
+        classes: prev.classes.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      }),
+      `class:${id}`,
+    );
+  }, [setState]);
 
   const moveClasses = useCallback((updates: { id: string; x: number; y: number }[]) => {
-    setState((prev) => ({
-      ...prev,
-      classes: prev.classes.map((c) => {
-        const u = updates.find((u) => u.id === c.id);
-        return u ? { ...c, position: { x: u.x, y: u.y } } : c;
+    setState(
+      (prev) => ({
+        ...prev,
+        classes: prev.classes.map((c) => {
+          const u = updates.find((u) => u.id === c.id);
+          return u ? { ...c, position: { x: u.x, y: u.y } } : c;
+        }),
       }),
-    }));
-  }, []);
+      'move-classes',
+    );
+  }, [setState]);
 
   const resizeClass = useCallback(
     (id: string, size: { width: number; height: number }, position?: Point) => {
@@ -102,14 +116,17 @@ export function useDiagram(): UseDiagramResult {
         width: Math.max(size.width, MIN_CLASS_SIZE.width),
         height: Math.max(size.height, MIN_CLASS_SIZE.height),
       };
-      setState((prev) => ({
-        ...prev,
-        classes: prev.classes.map((c) =>
-          c.id === id ? { ...c, size: clamped, position: position ?? c.position } : c,
-        ),
-      }));
+      setState(
+        (prev) => ({
+          ...prev,
+          classes: prev.classes.map((c) =>
+            c.id === id ? { ...c, size: clamped, position: position ?? c.position } : c,
+          ),
+        }),
+        `resize-class:${id}`,
+      );
     },
-    [],
+    [setState],
   );
 
   const deleteClasses = useCallback((ids: string[]) => {
@@ -121,7 +138,7 @@ export function useDiagram(): UseDiagramResult {
         (r) => !idSet.has(r.source) && !idSet.has(r.destination),
       ),
     }));
-  }, []);
+  }, [setState]);
 
   const addRelationship = useCallback(
     (source: string, destination: string, type: RelationshipType): string => {
@@ -137,17 +154,20 @@ export function useDiagram(): UseDiagramResult {
       setState((prev) => ({ ...prev, relationships: [...prev.relationships, newRel] }));
       return id;
     },
-    [],
+    [setState],
   );
 
   const updateRelationship = useCallback(
     (id: string, patch: Partial<Omit<RelationshipState, 'id'>>) => {
-      setState((prev) => ({
-        ...prev,
-        relationships: prev.relationships.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-      }));
+      setState(
+        (prev) => ({
+          ...prev,
+          relationships: prev.relationships.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+        }),
+        `rel:${id}`,
+      );
     },
-    [],
+    [setState],
   );
 
   const deleteRelationships = useCallback((ids: string[]) => {
@@ -156,7 +176,7 @@ export function useDiagram(): UseDiagramResult {
       ...prev,
       relationships: prev.relationships.filter((r) => !idSet.has(r.id)),
     }));
-  }, []);
+  }, [setState]);
 
   const addShape = useCallback(
     (kind: ShapeKind, position: Point, size?: { width: number; height: number }): string => {
@@ -171,18 +191,21 @@ export function useDiagram(): UseDiagramResult {
       selection.select({ kind: 'shape', id });
       return id;
     },
-    [selection],
+    [selection, setState],
   );
 
   const moveShapes = useCallback((updates: { id: string; x: number; y: number }[]) => {
-    setState((prev) => ({
-      ...prev,
-      shapes: prev.shapes.map((s) => {
-        const u = updates.find((u) => u.id === s.id);
-        return u ? { ...s, position: { x: u.x, y: u.y } } : s;
+    setState(
+      (prev) => ({
+        ...prev,
+        shapes: prev.shapes.map((s) => {
+          const u = updates.find((u) => u.id === s.id);
+          return u ? { ...s, position: { x: u.x, y: u.y } } : s;
+        }),
       }),
-    }));
-  }, []);
+      'move-shapes',
+    );
+  }, [setState]);
 
   const resizeShape = useCallback(
     (id: string, size: { width: number; height: number }, position?: Point) => {
@@ -190,20 +213,23 @@ export function useDiagram(): UseDiagramResult {
         width: Math.max(size.width, MIN_SHAPE_SIZE.width),
         height: Math.max(size.height, MIN_SHAPE_SIZE.height),
       };
-      setState((prev) => ({
-        ...prev,
-        shapes: prev.shapes.map((s) =>
-          s.id === id ? { ...s, size: clamped, position: position ?? s.position } : s,
-        ),
-      }));
+      setState(
+        (prev) => ({
+          ...prev,
+          shapes: prev.shapes.map((s) =>
+            s.id === id ? { ...s, size: clamped, position: position ?? s.position } : s,
+          ),
+        }),
+        `resize-shape:${id}`,
+      );
     },
-    [],
+    [setState],
   );
 
   const deleteShapes = useCallback((ids: string[]) => {
     const idSet = new Set(ids);
     setState((prev) => ({ ...prev, shapes: prev.shapes.filter((s) => !idSet.has(s.id)) }));
-  }, []);
+  }, [setState]);
 
   const duplicateSelected = useCallback(() => {
     const classIds = selection.selectedIdsOfKind('class');
@@ -247,7 +273,7 @@ export function useDiagram(): UseDiagramResult {
       ...newClasses.map((c) => ({ kind: 'class' as const, id: c.id })),
       ...newShapes.map((s) => ({ kind: 'shape' as const, id: s.id })),
     ]);
-  }, [selection, state]);
+  }, [selection, state, setState]);
 
   const deleteSelected = useCallback(() => {
     const classIds = selection.selectedIdsOfKind('class');
@@ -274,7 +300,7 @@ export function useDiagram(): UseDiagramResult {
   }, [state]);
 
   const loadDocument = useCallback(
-    (doc: UmlDocument) => {
+    (doc: UmlDocument, options?: { undoable?: boolean }) => {
       const classes = doc.classes.map(classFromWire);
       const relationships: RelationshipState[] = doc.relationships.map((r) => ({
         id: r.id,
@@ -285,7 +311,9 @@ export function useDiagram(): UseDiagramResult {
         label: r.label,
       }));
 
-      setState({ classes, relationships, shapes: [] });
+      const loaded: DiagramState = { classes, relationships, shapes: [] };
+      if (options?.undoable) setState(() => loaded);
+      else resetHistory(loaded);
       classSeqRef.current = nextSeqFromIds(
         classes.map((c) => c.id),
         'class_',
@@ -299,8 +327,26 @@ export function useDiagram(): UseDiagramResult {
       canvas.cancelPendingRelationship();
       canvas.resetView();
     },
-    [selection, canvas],
+    [selection, canvas, resetHistory, setState],
   );
+
+  const clear = useCallback(() => {
+    setState(() => EMPTY_STATE);
+    selection.clearSelection();
+    canvas.cancelPendingRelationship();
+  }, [selection, canvas, setState]);
+
+  const undo = useCallback(() => {
+    undoHistory();
+    selection.clearSelection();
+    canvas.cancelPendingRelationship();
+  }, [undoHistory, selection, canvas]);
+
+  const redo = useCallback(() => {
+    redoHistory();
+    selection.clearSelection();
+    canvas.cancelPendingRelationship();
+  }, [redoHistory, selection, canvas]);
 
   const getContentBounds = useCallback((): Rect | null => {
     const rects: Rect[] = [
@@ -348,6 +394,11 @@ export function useDiagram(): UseDiagramResult {
 
     toDocument,
     loadDocument,
+    clear,
+    undo,
+    redo,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
     getContentBounds,
   };
 }

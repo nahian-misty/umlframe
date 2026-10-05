@@ -8,6 +8,12 @@
   color: var(--color-danger);
 }
 
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
 .diagramContainer {
   overflow: auto;
   max-height: 70vh;

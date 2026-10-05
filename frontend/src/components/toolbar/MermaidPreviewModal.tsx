@@ -57,7 +57,11 @@ export function MermaidPreviewModal({ onClose }: MermaidPreviewModalProps) {
         </Button>
       }
     >
-      {error ? <p className={styles.error}>{error}</p> : <MermaidRenderer source={source} />}
+      {error ? (
+        <p className={styles.error}>{error}</p>
+      ) : (
+        <MermaidRenderer source={source} filename="uml-class-diagram.png" />
+      )}
     </Modal>
   );
 }
