@@ -62,11 +62,7 @@ export function MethodRow({ method, startExpanded, onChange, onDelete }: MethodR
 
   if (!isExpanded) {
     return (
-      <div
-        className={styles.summary}
-        onClick={() => setIsExpanded(true)}
-        title="Click to edit"
-      >
+      <div className={styles.summary} onClick={() => setIsExpanded(true)} title="Click to edit">
         {summarize(method)}
       </div>
     );

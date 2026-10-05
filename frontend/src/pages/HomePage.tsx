@@ -43,7 +43,7 @@ const FEATURES: Feature[] = [
     id: 'reverse',
     title: 'Reverse Engineering',
     description: 'Reconstruct a class diagram or activity diagram from existing source code.',
-    status: 'coming-soon',
+    status: 'live',
     icon: GitBranch,
   },
 ];
@@ -51,15 +51,18 @@ const FEATURES: Feature[] = [
 const STEPS = [
   {
     title: 'Draw',
-    description: 'Sketch your class diagram on the infinite canvas — classes, attributes, relationships.',
+    description:
+      'Sketch your class diagram on the infinite canvas — classes, attributes, relationships.',
   },
   {
     title: 'Generate',
-    description: 'Export to code in Python, Java, or JavaScript with one click — or upload a source file to reverse it.',
+    description:
+      'Export to code in Python, Java, or JavaScript with one click — or upload a source file to reverse it.',
   },
   {
     title: 'Iterate',
-    description: 'Save your work as a project, come back any time, and keep both directions in sync.',
+    description:
+      'Save your work as a project, come back any time, and keep both directions in sync.',
   },
 ];
 
@@ -83,7 +86,15 @@ function FeatureCard({ feature, delay }: { feature: Feature; delay: number }) {
   );
 }
 
-function StepCard({ index, title, description }: { index: number; title: string; description: string }) {
+function StepCard({
+  index,
+  title,
+  description,
+}: {
+  index: number;
+  title: string;
+  description: string;
+}) {
   const [ref, isVisible] = useScrollReveal<HTMLDivElement>();
   return (
     <div
@@ -137,9 +148,9 @@ export function HomePage() {
             Generate real code. <span className={styles.heroAccent}>Both directions.</span>
           </h1>
           <p className={styles.heroSubtitle}>
-            UMLFrame turns your class diagrams into working Python, Java, or JavaScript source —
-            and reconstructs diagrams from code you already have. One canonical schema powers
-            every pipeline.
+            UMLFrame turns your class diagrams into working Python, Java, or JavaScript source — and
+            reconstructs diagrams from code you already have. One canonical schema powers every
+            pipeline.
           </p>
           <div className={styles.heroActions}>
             {isAuthenticated ? (
@@ -179,7 +190,12 @@ export function HomePage() {
         <h2 className={styles.sectionTitle}>How it works</h2>
         <div className={styles.stepGrid}>
           {STEPS.map((step, i) => (
-            <StepCard key={step.title} index={i} title={step.title} description={step.description} />
+            <StepCard
+              key={step.title}
+              index={i}
+              title={step.title}
+              description={step.description}
+            />
           ))}
         </div>
       </section>
@@ -189,7 +205,9 @@ export function HomePage() {
           <Boxes size={16} />
           <span>UMLFrame</span>
         </div>
-        <p className={styles.footerCopy}>© {new Date().getFullYear()} UMLFrame. All rights reserved.</p>
+        <p className={styles.footerCopy}>
+          © {new Date().getFullYear()} UMLFrame. All rights reserved.
+        </p>
       </footer>
     </div>
   );
