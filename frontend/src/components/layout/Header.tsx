@@ -47,6 +47,7 @@ export function Header() {
             email={user.email}
             resolvedTheme={resolvedTheme}
             onToggleTheme={toggle}
+            onOpenAccount={() => guardedNavigate('/account')}
             onLogout={handleLogout}
           />
         )}

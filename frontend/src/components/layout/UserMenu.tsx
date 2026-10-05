@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, LogOut, Moon, Sun } from 'lucide-react';
+import { ChevronDown, LogOut, Moon, Settings, Sun } from 'lucide-react';
 
 import styles from './UserMenu.module.css';
 
@@ -7,10 +7,11 @@ interface UserMenuProps {
   email: string;
   resolvedTheme: 'light' | 'dark';
   onToggleTheme: () => void;
+  onOpenAccount: () => void;
   onLogout: () => void;
 }
 
-export function UserMenu({ email, resolvedTheme, onToggleTheme, onLogout }: UserMenuProps) {
+export function UserMenu({ email, resolvedTheme, onToggleTheme, onOpenAccount, onLogout }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -75,6 +76,18 @@ export function UserMenu({ email, resolvedTheme, onToggleTheme, onLogout }: User
             <span className={styles.identityLabel}>Signed in as</span>
             <span className={styles.identityEmail}>{email}</span>
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.item}
+            onClick={() => {
+              setIsOpen(false);
+              onOpenAccount();
+            }}
+          >
+            <Settings size={14} />
+            Account settings
+          </button>
           <button
             type="button"
             role="menuitem"

@@ -21,6 +21,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Changes the password; the server issues a fresh token because every older one stops working. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,6 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      if (!token) throw new Error('Not signed in');
+      const result = await authApi.changePassword(token, currentPassword, newPassword);
+      localStorage.setItem(TOKEN_STORAGE_KEY, result.accessToken);
+      setToken(result.accessToken);
+      setUser(result.user);
+    },
+    [token],
+  );
+
   const logout = useCallback(async () => {
     if (token) {
       await authApi.logout(token).catch(() => undefined);
@@ -88,8 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      changePassword,
     }),
-    [token, user, isLoading, login, register, logout],
+    [token, user, isLoading, login, register, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
