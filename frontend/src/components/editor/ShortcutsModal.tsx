@@ -7,6 +7,7 @@ const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 'Ctrl/Cmd + Shift + Z  or  Ctrl + Y', action: 'Redo' },
   { keys: 'Delete / Backspace', action: 'Delete the selection' },
   { keys: 'Ctrl/Cmd + D', action: 'Duplicate the selection' },
+  { keys: 'Arrow keys  (Shift = larger step)', action: 'Move the selected boxes, shapes or nodes' },
   { keys: 'Shift/Ctrl/Cmd + click', action: 'Add to the selection' },
   { keys: 'Esc', action: 'Clear the selection and return to the Select tool' },
   { keys: 'Ctrl/Cmd + scroll', action: 'Zoom at the cursor' },

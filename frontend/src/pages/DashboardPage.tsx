@@ -185,7 +185,7 @@ export function DashboardPage() {
     <div className={styles.page}>
       <div className={styles.intro}>
         <div>
-          <h1 className={styles.title}>Welcome{user ? `, ${user.email}` : ''}</h1>
+          <h1 className={styles.title}>Welcome{user ? `, ${user.username}` : ''}</h1>
           <p className={styles.subtitle}>Pick a project to open, or start a new one. UML class diagrams and activity diagrams are kept in separate lists.</p>
         </div>
         <Button variant="primary" icon={FolderPlus} onClick={openCreateModal}>

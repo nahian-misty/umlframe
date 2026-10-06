@@ -14,9 +14,11 @@ import styles from './Tabs.module.css';
 interface CodeToUmlTabProps {
   input: CodeToUmlInput;
   onInputChange: (input: CodeToUmlInput) => void;
+  /** Called after a successful parse, so the host can save the code together with the diagram. */
+  onParsed: () => void;
 }
 
-export function CodeToUmlTab({ input, onInputChange }: CodeToUmlTabProps) {
+export function CodeToUmlTab({ input, onInputChange, onParsed }: CodeToUmlTabProps) {
   const diagram = useDiagramContext();
   const { showToast } = useToast();
   const { source, language } = input;
@@ -34,6 +36,7 @@ export function CodeToUmlTab({ input, onInputChange }: CodeToUmlTabProps) {
     try {
       diagram.loadDocument(await reverseToJson(source, language), { undoable: true });
       setConfirmed(false);
+      onParsed();
       showToast('Diagram reconstructed from source', 'success');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to parse source');

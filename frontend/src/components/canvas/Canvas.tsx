@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 import { useDiagramContext } from '../../context/DiagramContext';
 import { useViewportNavigation } from '../../hooks/useViewportNavigation';
@@ -29,22 +35,71 @@ function rectOf(item: {
   };
 }
 
+/** Canvas-space width/height of each class box as rendered (offset sizes ignore zoom). */
+function useRenderedClassSizes(
+  contentRef: { current: HTMLDivElement | null },
+  classes: UmlClassState[],
+): Map<string, { width: number; height: number }> {
+  const [sizes, setSizes] = useState<Map<string, { width: number; height: number }>>(new Map());
+
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const measure = () => {
+      const next = new Map<string, { width: number; height: number }>();
+      root.querySelectorAll<HTMLElement>('[data-class-id]').forEach((el) => {
+        next.set(el.dataset.classId as string, { width: el.offsetWidth, height: el.offsetHeight });
+      });
+      setSizes((prev) => {
+        const same =
+          prev.size === next.size &&
+          [...next].every(([id, v]) => {
+            const old = prev.get(id);
+            return old && old.width === v.width && old.height === v.height;
+          });
+        return same ? prev : next;
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    root.querySelectorAll('[data-class-id]').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [contentRef, classes]);
+
+  return sizes;
+}
+
 export function Canvas() {
   const diagram = useDiagramContext();
   const viewportRef = useRef<HTMLDivElement>(null);
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null);
 
+  const renderedSizes = useRenderedClassSizes(diagram.contentRef, diagram.classes);
+
   const edgeRoutes = useMemo(
     () =>
       routeEdges(
-        new Map(diagram.classes.map((c) => [c.id, rectOf(c)])),
+        new Map(
+          diagram.classes.map((c) => {
+            const rect = rectOf(c);
+            const measured = renderedSizes.get(c.id);
+            // A box grows past its nominal size to fit its rows; lines must meet the
+            // box as drawn, not the size stored in the document.
+            return [
+              c.id,
+              measured
+                ? { ...rect, width: measured.width, height: measured.height }
+                : rect,
+            ];
+          }),
+        ),
         diagram.relationships.map((r) => ({
           id: r.id,
           source: r.source,
           destination: r.destination,
         })),
       ),
-    [diagram.classes, diagram.relationships],
+    [diagram.classes, diagram.relationships, renderedSizes],
   );
 
   const { toCanvasPoint, startPanDrag } = useViewportNavigation(viewportRef, diagram);
@@ -275,6 +330,28 @@ export function Canvas() {
           transform: `translate(${diagram.pan.x}px, ${diagram.pan.y}px) scale(${diagram.zoom})`,
         }}
       >
+        {diagram.shapes.map((shape) => (
+          <ShapeRenderer
+            key={shape.id}
+            shape={shape}
+            isSelected={diagram.isSelected({ kind: 'shape', id: shape.id })}
+            onPointerDown={(e) => handleItemPointerDown('shape', shape.id, e)}
+          />
+        ))}
+
+        {diagram.classes.map((cls) => (
+          <UmlClassBox
+            key={cls.id}
+            cls={cls}
+            isSelected={diagram.isSelected({ kind: 'class', id: cls.id })}
+            isPendingRelationshipSource={diagram.pendingRelationshipSource === cls.id}
+            onPointerDownBox={(e) => handleItemPointerDown('class', cls.id, e)}
+            onUpdate={(patch) => diagram.updateClass(cls.id, patch)}
+          />
+        ))}
+
+        {/* Drawn after the boxes so relationship lines and their end markers stay visible
+            where they meet a box; only the stroke itself takes pointer events. */}
         <svg className={styles.vectorLayer}>
           <RelationshipMarkerDefs />
           {diagram.relationships.map((rel) => {
@@ -297,26 +374,6 @@ export function Canvas() {
             );
           })}
         </svg>
-
-        {diagram.shapes.map((shape) => (
-          <ShapeRenderer
-            key={shape.id}
-            shape={shape}
-            isSelected={diagram.isSelected({ kind: 'shape', id: shape.id })}
-            onPointerDown={(e) => handleItemPointerDown('shape', shape.id, e)}
-          />
-        ))}
-
-        {diagram.classes.map((cls) => (
-          <UmlClassBox
-            key={cls.id}
-            cls={cls}
-            isSelected={diagram.isSelected({ kind: 'class', id: cls.id })}
-            isPendingRelationshipSource={diagram.pendingRelationshipSource === cls.id}
-            onPointerDownBox={(e) => handleItemPointerDown('class', cls.id, e)}
-            onUpdate={(patch) => diagram.updateClass(cls.id, patch)}
-          />
-        ))}
 
         {selectedSingle && selectedRect && (
           <SelectionOverlay rect={selectedRect} onResizeStart={handleResizeStart} />

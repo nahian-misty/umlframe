@@ -24,9 +24,11 @@ import styles from './Tabs.module.css';
 interface CodeToActivityTabProps {
   input: CodeToActivityInput;
   onInputChange: (input: CodeToActivityInput) => void;
+  /** Called after a successful extraction, so the host can save the code with the diagram. */
+  onParsed: () => void;
 }
 
-export function CodeToActivityTab({ input, onInputChange }: CodeToActivityTabProps) {
+export function CodeToActivityTab({ input, onInputChange, onParsed }: CodeToActivityTabProps) {
   const activity = useActivityDiagramContext();
   const { showToast } = useToast();
   const { source, language, className, methodName } = input;
@@ -56,6 +58,7 @@ export function CodeToActivityTab({ input, onInputChange }: CodeToActivityTabPro
       onInputChange({ ...input, className: first.className, methodName: first.methodName });
       setError(first.error);
       showMethod(first);
+      onParsed();
       showToast(
         found.length === 1
           ? 'Control flow loaded onto the canvas'

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { arrowKeyDelta } from '../utils/arrowNudge';
 import type { UseDiagramResult } from './useDiagram';
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -38,6 +39,26 @@ export function useKeyboardShortcuts(diagram: UseDiagramResult, enabled = true):
         if (diagram.selected.length === 0) return;
         event.preventDefault();
         diagram.duplicateSelected();
+        return;
+      }
+
+      const nudge = arrowKeyDelta(event);
+      if (nudge) {
+        const classIds = new Set(
+          diagram.selected.filter((r) => r.kind === 'class').map((r) => r.id),
+        );
+        const shapeIds = new Set(
+          diagram.selected.filter((r) => r.kind === 'shape').map((r) => r.id),
+        );
+        if (classIds.size + shapeIds.size === 0) return;
+        event.preventDefault();
+        const moved = (item: { id: string; position: { x: number; y: number } }) => ({
+          id: item.id,
+          x: item.position.x + nudge.dx,
+          y: item.position.y + nudge.dy,
+        });
+        diagram.moveClasses(diagram.classes.filter((c) => classIds.has(c.id)).map(moved));
+        diagram.moveShapes(diagram.shapes.filter((s) => shapeIds.has(s.id)).map(moved));
         return;
       }
 

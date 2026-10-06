@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { arrowKeyDelta } from '../utils/arrowNudge';
 import type { UseActivityDiagramResult } from './useActivityDiagram';
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -29,6 +30,20 @@ export function useActivityShortcuts(activity: UseActivityDiagramResult, enabled
         if (!hasSelection) return;
         event.preventDefault();
         activity.duplicateSelected();
+      } else if (arrowKeyDelta(event) && activity.selectedNodeIds.length > 0) {
+        const nudge = arrowKeyDelta(event);
+        if (!nudge) return;
+        event.preventDefault();
+        const selected = new Set(activity.selectedNodeIds);
+        activity.moveNodes(
+          activity.nodes
+            .filter((node) => selected.has(node.id))
+            .map((node) => ({
+              id: node.id,
+              x: node.position.x + nudge.dx,
+              y: node.position.y + nudge.dy,
+            })),
+        );
       } else if (event.key === 'Escape') {
         activity.clearSelection();
         activity.armConnectSource(null);

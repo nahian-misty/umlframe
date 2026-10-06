@@ -19,3 +19,16 @@ export function writeStoredChoice(key: string, value: string): void {
     // The preference just won't persist; the UI still works for this session.
   }
 }
+
+/** Free text kept per browser (e.g. a draft the user would hate to retype). */
+export function readStoredText(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function writeStoredText(key: string, value: string): void {
+  writeStoredChoice(key, value);
+}

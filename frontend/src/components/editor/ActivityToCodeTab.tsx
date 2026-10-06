@@ -1,12 +1,11 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState } from 'react';
 
-import { activityImageToJson, generateActivityCode } from '../../api/activityApi';
+import { generateActivityCode } from '../../api/activityApi';
 import { ApiError } from '../../api/client';
 import { useActivityDiagramContext } from '../../context/ActivityDiagramContext';
 import { codegenProblems } from '../../utils/activityValidation';
 import { ActivityCanvas } from '../canvas/ActivityCanvas';
 import { Button } from '../common/Button';
-import { useToast } from '../common/ToastProvider';
 import { ActivityToolbar } from '../toolbar/ActivityToolbar';
 import { CodeViewer } from '../toolbar/CodeViewer';
 import form from '../toolbar/PipelineModal.module.css';
@@ -16,7 +15,6 @@ const LANGUAGES = ['python', 'java', 'javascript'] as const;
 
 export function ActivityToCodeTab() {
   const activity = useActivityDiagramContext();
-  const { showToast } = useToast();
   const [language, setLanguage] = useState<string>('python');
   const [functionName, setFunctionName] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -24,22 +22,6 @@ export function ActivityToCodeTab() {
   const [files, setFiles] = useState<Record<string, string> | null>(null);
 
   const problems = activity.nodes.length > 0 ? codegenProblems(activity.toDocument()) : [];
-
-  const handleImage = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setIsBusy(true);
-    setError(null);
-    try {
-      activity.loadDocument(await activityImageToJson(file), { layout: true, undoable: true });
-      showToast('Activity diagram loaded from image', 'success');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to read the image');
-    } finally {
-      setIsBusy(false);
-    }
-  };
 
   const handleGenerate = async () => {
     setIsBusy(true);
@@ -60,15 +42,6 @@ export function ActivityToCodeTab() {
       </div>
       <ActivityToolbar>
         <h3 className={styles.sectionTitle}>Generate code</h3>
-        <div className={form.field}>
-          <span className={form.label}>Load from image (PNG or JPEG)</span>
-          <input
-            type="file"
-            accept="image/png,image/jpeg"
-            disabled={isBusy}
-            onChange={(e) => void handleImage(e)}
-          />
-        </div>
         <div className={form.field}>
           <span className={form.label}>Target language</span>
           <select

@@ -71,6 +71,7 @@ export function EditorPage() {
   const [autoSave, setAutoSave] = useState(readAutoSavePreference);
   const [saved, setSaved] = useState<SavedSnapshots | null>(null);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [parseSaveRequests, setParseSaveRequests] = useState(0);
   const loadedProjectId = useRef<string | null>(null);
 
   const toUmlDocument = diagram.toDocument;
@@ -84,7 +85,9 @@ export function EditorPage() {
 
   const isDirty =
     saved !== null &&
-    (saved.uml !== umlSnapshot || saved.activity !== activitySnapshot || saved.code !== codeSnapshot);
+    (saved.uml !== umlSnapshot ||
+      saved.activity !== activitySnapshot ||
+      saved.code !== codeSnapshot);
 
   useEffect(() => {
     if (!token || !projectId || loadedProjectId.current === projectId) return;
@@ -149,7 +152,8 @@ export function EditorPage() {
               : (prev?.activity ?? JSON.stringify(activityDocument)),
         }));
         if (hasActivity && !saveActivity) {
-          if (!silent) showToast(`Saved. Activity diagram not saved: ${activityProblems[0]}`, 'error');
+          if (!silent)
+            showToast(`Saved. Activity diagram not saved: ${activityProblems[0]}`, 'error');
         } else if (!silent) {
           showToast('Project saved.', 'success');
         }
@@ -179,6 +183,13 @@ export function EditorPage() {
     return () => window.clearTimeout(timer);
     // isDirty is derived from the three snapshots; depending on them re-arms the timer per edit.
   }, [autoSave, isDirty, umlSnapshot, activitySnapshot, codeSnapshot]);
+
+  // A successful parse changes the code inputs and the diagram together; save them at once
+  // (the counter is bumped in the same batch as the new state, so persist sees both) instead of
+  // leaving the pasted code to be lost until the user remembers to press Save.
+  useEffect(() => {
+    if (parseSaveRequests > 0) void persistRef.current(true);
+  }, [parseSaveRequests]);
 
   // Ctrl/Cmd+S works everywhere (even inside a text field); "?" only outside one.
   const saveRef = useRef(handleSave);
@@ -300,6 +311,7 @@ export function EditorPage() {
           <CodeToUmlTab
             input={codeInputs.codeToUml}
             onInputChange={(codeToUml) => setCodeInputs((prev) => ({ ...prev, codeToUml }))}
+            onParsed={() => setParseSaveRequests((n) => n + 1)}
           />
         )}
         {activeTab === 'activity-code' && <ActivityToCodeTab />}
@@ -309,6 +321,7 @@ export function EditorPage() {
             onInputChange={(codeToActivity) =>
               setCodeInputs((prev) => ({ ...prev, codeToActivity }))
             }
+            onParsed={() => setParseSaveRequests((n) => n + 1)}
           />
         )}
       </div>
