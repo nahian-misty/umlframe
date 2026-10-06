@@ -4,14 +4,14 @@ import { ChevronDown, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import styles from './UserMenu.module.css';
 
 interface UserMenuProps {
-  email: string;
+  username: string;
   resolvedTheme: 'light' | 'dark';
   onToggleTheme: () => void;
   onOpenAccount: () => void;
   onLogout: () => void;
 }
 
-export function UserMenu({ email, resolvedTheme, onToggleTheme, onOpenAccount, onLogout }: UserMenuProps) {
+export function UserMenu({ username, resolvedTheme, onToggleTheme, onOpenAccount, onLogout }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -51,7 +51,7 @@ export function UserMenu({ email, resolvedTheme, onToggleTheme, onOpenAccount, o
   };
 
   const isDark = resolvedTheme === 'dark';
-  const initial = email.trim().charAt(0).toUpperCase() || '?';
+  const initial = username.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <div ref={containerRef} className={styles.container}>
@@ -61,7 +61,7 @@ export function UserMenu({ email, resolvedTheme, onToggleTheme, onOpenAccount, o
         className={styles.trigger}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        aria-label={`Account menu for ${email}`}
+        aria-label={`Account menu for ${username}`}
         onClick={() => setIsOpen((open) => !open)}
       >
         <span className={styles.avatar} aria-hidden="true">
@@ -74,7 +74,7 @@ export function UserMenu({ email, resolvedTheme, onToggleTheme, onOpenAccount, o
         <div role="menu" className={styles.menu} onKeyDown={handleMenuKeyDown}>
           <div className={styles.identity}>
             <span className={styles.identityLabel}>Signed in as</span>
-            <span className={styles.identityEmail}>{email}</span>
+            <span className={styles.identityName}>{username}</span>
           </div>
           <button
             type="button"

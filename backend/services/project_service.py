@@ -19,6 +19,10 @@ class ProjectNotFoundError(ValueError):
     pass
 
 
+class ProjectNameTakenError(ValueError):
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -33,6 +37,20 @@ def _get_owned_project(db: Session, user_id: int, project_id: int) -> Project:
     if project is None:
         raise ProjectNotFoundError(f"Project '{project_id}' not found")
     return project
+
+
+def _ensure_name_available(
+    db: Session, user_id: int, name: str, exclude_project_id: int | None = None
+) -> None:
+    """A user's project names are unique, ignoring case and surrounding whitespace."""
+    query = db.query(Project.id).filter(
+        Project.owner_id == user_id,
+        func.lower(func.trim(Project.name)) == name.strip().lower(),
+    )
+    if exclude_project_id is not None:
+        query = query.filter(Project.id != exclude_project_id)
+    if query.first() is not None:
+        raise ProjectNameTakenError(f"You already have a project named '{name.strip()}'")
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +100,7 @@ def create_project(
     code_inputs: CodeInputs | None = None,
     project_type: ProjectType = DEFAULT_PROJECT_TYPE,
 ) -> Project:
+    _ensure_name_available(db, user_id, name)
     doc = document if document is not None else EMPTY_DOCUMENT
     project = Project(
         name=name,
@@ -114,6 +133,7 @@ def update_project(
 ) -> Project:
     project = _get_owned_project(db, user_id, project_id)
     if name is not None:
+        _ensure_name_available(db, user_id, name, exclude_project_id=project_id)
         project.name = name
     if document is not None:
         project.document = document.model_dump_json()

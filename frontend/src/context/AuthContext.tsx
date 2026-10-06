@@ -19,7 +19,7 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, username: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Changes the password; the server issues a fresh token because every older one stops working. */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -65,8 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
-  const register = useCallback(async (email: string, password: string) => {
-    const result = await authApi.register(email, password);
+  const register = useCallback(async (email: string, password: string, username: string) => {
+    const result = await authApi.register(email, password, username);
     localStorage.setItem(TOKEN_STORAGE_KEY, result.accessToken);
     setToken(result.accessToken);
     setUser(result.user);

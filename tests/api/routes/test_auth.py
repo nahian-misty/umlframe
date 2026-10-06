@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_register_success(client):
     resp = client.post(
         "/api/auth/register", json={"email": "alice@example.com", "password": "password123"}
@@ -133,3 +136,35 @@ def test_change_password_requires_authentication(client):
         json={"current_password": "old-password-1", "new_password": "new-password-2"},
     )
     assert resp.status_code in (401, 403)
+
+
+def _register_with_username(client, email, username=None):
+    body = {"email": email, "password": "password123"}
+    if username is not None:
+        body["username"] = username
+    return client.post("/api/auth/register", json=body)
+
+
+def test_register_with_username_returns_it_in_token_and_me(client):
+    body = _register_with_username(client, "alice@example.com", "alice_w").json()
+    assert body["user"]["username"] == "alice_w"
+    me = client.get(
+        "/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    ).json()
+    assert me["username"] == "alice_w"
+
+
+def test_register_without_username_derives_one_from_email(client):
+    assert _register_with_username(client, "bob.smith@example.com").json()["user"]["username"] == "bob.smith"
+    assert _register_with_username(client, "bob.smith@other.org").json()["user"]["username"] == "bob.smith2"
+
+
+def test_register_duplicate_username_is_case_insensitive_409(client):
+    _register_with_username(client, "a@example.com", "Alice")
+    assert _register_with_username(client, "b@example.com", "alice").status_code == 409
+
+
+@pytest.mark.parametrize("username", ["ab", "x" * 31, "has space", "bad@char"])
+def test_register_invalid_username_returns_422(client, username):
+    assert _register_with_username(client, "a@example.com", username).status_code == 422
+

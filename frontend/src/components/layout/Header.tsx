@@ -44,7 +44,7 @@ export function Header() {
       <div className={styles.right}>
         {user && (
           <UserMenu
-            email={user.email}
+            username={user.username}
             resolvedTheme={resolvedTheme}
             onToggleTheme={toggle}
             onOpenAccount={() => guardedNavigate('/account')}

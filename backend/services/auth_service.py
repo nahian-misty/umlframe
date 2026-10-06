@@ -5,13 +5,19 @@ from typing import Any
 
 import bcrypt
 import jwt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.db.models import User
+from backend.db.usernames import derive_username
 
 
 class EmailAlreadyRegisteredError(ValueError):
+    pass
+
+
+class UsernameAlreadyTakenError(ValueError):
     pass
 
 
@@ -49,12 +55,22 @@ def _verify_password(password: str, hashed: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def register_user(db: Session, email: str, password: str) -> User:
+def _username_in_use(db: Session, username: str) -> bool:
+    return db.query(User).filter(func.lower(User.username) == username.lower()).first() is not None
+
+
+def register_user(db: Session, email: str, password: str, username: str | None = None) -> User:
     existing = db.query(User).filter(User.email == email).first()
     if existing is not None:
         raise EmailAlreadyRegisteredError(f"Email '{email}' is already registered")
 
-    user = User(email=email, hashed_password=_hash_password(password))
+    if username is None:
+        taken = {name.lower() for (name,) in db.query(User.username).all()}
+        username = derive_username(email, taken)
+    elif _username_in_use(db, username):
+        raise UsernameAlreadyTakenError(f"Username '{username}' is already taken")
+
+    user = User(email=email, username=username, hashed_password=_hash_password(password))
     db.add(user)
     db.commit()
     db.refresh(user)

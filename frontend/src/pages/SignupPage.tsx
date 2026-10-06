@@ -8,6 +8,7 @@ import { ApiError } from '../api/client';
 import styles from './AuthPage.module.css';
 
 export function SignupPage() {
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,7 +19,7 @@ export function SignupPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
       setError('Please fill in all fields.');
       return;
     }
@@ -29,7 +30,7 @@ export function SignupPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await register(email.trim(), password);
+      await register(email.trim(), password, username.trim());
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Sign up failed. Please try again.');
@@ -46,6 +47,19 @@ export function SignupPage() {
           <h1 className={styles.title}>UMLFrame</h1>
         </Link>
         <p className={styles.subtitle}>Create an account to continue</p>
+
+        <label className={styles.field}>
+          <span>Username</span>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="your_name"
+            autoComplete="username"
+            minLength={3}
+            maxLength={30}
+          />
+        </label>
 
         <label className={styles.field}>
           <span>Email</span>

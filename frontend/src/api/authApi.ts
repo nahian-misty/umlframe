@@ -3,6 +3,7 @@ import { apiFetch } from './client';
 export interface AuthUser {
   id: number;
   email: string;
+  username: string;
 }
 
 interface TokenResponse {
@@ -20,11 +21,15 @@ function fromTokenResponse(response: TokenResponse): AuthResult {
   return { accessToken: response.access_token, user: response.user };
 }
 
-export async function register(email: string, password: string): Promise<AuthResult> {
+export async function register(
+  email: string,
+  password: string,
+  username: string,
+): Promise<AuthResult> {
   const response = await apiFetch<TokenResponse>('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, username }),
   });
   return fromTokenResponse(response);
 }

@@ -63,6 +63,10 @@ export function AccountPage() {
         <section className={styles.card}>
           <h2 className={styles.sectionTitle}>Profile</h2>
           <div className={styles.field}>
+            <span>Username</span>
+            <strong className={styles.value}>{user?.username}</strong>
+          </div>
+          <div className={styles.field}>
             <span>Email</span>
             <strong className={styles.value}>{user?.email}</strong>
           </div>

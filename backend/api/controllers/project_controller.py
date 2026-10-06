@@ -15,7 +15,7 @@ from backend.models.responses import (
 from backend.schemas.activity import ActivityDocument
 from backend.schemas.uml import UmlDocument
 from backend.services import project_service
-from backend.services.project_service import ProjectNotFoundError
+from backend.services.project_service import ProjectNameTakenError, ProjectNotFoundError
 
 
 def _to_response(project: Project) -> ProjectResponse:
@@ -103,6 +103,8 @@ async def create_project(
             request.code_inputs,
             request.project_type,
         )
+    except ProjectNameTakenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -133,6 +135,8 @@ async def update_project(
         )
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectNameTakenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

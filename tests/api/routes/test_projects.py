@@ -298,3 +298,19 @@ def test_activity_project_thumbnail_uses_activity_nodes(client):
     summary = client.get("/api/projects", headers=headers).json()["projects"][0]
     assert summary["node_count"] == 2
     assert summary["class_boxes"][0] == {"x": 5, "y": 6, "width": 30, "height": 30}
+
+
+def test_create_project_with_taken_name_returns_409(client):
+    headers = _auth_headers(client, "conflict@example.com")
+    assert client.post("/api/projects", json={"name": "Shop"}, headers=headers).status_code == 200
+    resp = client.post("/api/projects", json={"name": "shop"}, headers=headers)
+    assert resp.status_code == 409
+    assert "already have a project" in resp.json()["detail"]
+
+
+def test_rename_project_to_taken_name_returns_409(client):
+    headers = _auth_headers(client, "rename409@example.com")
+    client.post("/api/projects", json={"name": "Shop"}, headers=headers)
+    other = client.post("/api/projects", json={"name": "Other"}, headers=headers).json()["id"]
+    resp = client.put(f"/api/projects/{other}", json={"name": "Shop"}, headers=headers)
+    assert resp.status_code == 409

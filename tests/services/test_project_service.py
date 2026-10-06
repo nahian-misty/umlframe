@@ -11,7 +11,7 @@ from backend.schemas.activity import (
 )
 from backend.schemas.uml import Position, Size, UmlClass, UmlDocument
 from backend.services import auth_service, project_service
-from backend.services.project_service import ProjectNotFoundError
+from backend.services.project_service import ProjectNameTakenError, ProjectNotFoundError
 
 
 def _make_user(db_session, email: str):
@@ -256,3 +256,47 @@ def test_add_missing_user_columns_upgrades_old_schema():
     add_missing_user_columns(old_engine)
     columns = {column["name"] for column in inspect(old_engine).get_columns("users")}
     assert "password_changed_at" in columns
+
+
+def test_add_missing_user_columns_backfills_unique_usernames():
+    from backend.db.session import add_missing_user_columns
+
+    old_engine = create_engine("sqlite://")
+    with old_engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)"))
+        connection.execute(
+            text("INSERT INTO users (email) VALUES ('sam@a.com'), ('sam@b.com'), ('x@c.com')")
+        )
+    add_missing_user_columns(old_engine)
+    with old_engine.connect() as connection:
+        names = [r[0] for r in connection.execute(text("SELECT username FROM users ORDER BY id"))]
+    assert names == ["sam", "sam2", "user"]
+
+
+def test_create_project_rejects_duplicate_name_ignoring_case_and_spaces(db_session):
+    user = _make_user(db_session, "dup@example.com")
+    project_service.create_project(db_session, user.id, "Shop", None)
+    with pytest.raises(ProjectNameTakenError):
+        project_service.create_project(db_session, user.id, "  shop ", None)
+
+
+def test_same_project_name_is_allowed_for_different_users(db_session):
+    first = _make_user(db_session, "one@example.com")
+    second = _make_user(db_session, "two@example.com")
+    project_service.create_project(db_session, first.id, "Shop", None)
+    assert project_service.create_project(db_session, second.id, "Shop", None).name == "Shop"
+
+
+def test_rename_to_another_projects_name_is_rejected(db_session):
+    user = _make_user(db_session, "rename@example.com")
+    project_service.create_project(db_session, user.id, "Shop", None)
+    other = project_service.create_project(db_session, user.id, "Other", None)
+    with pytest.raises(ProjectNameTakenError):
+        project_service.update_project(db_session, user.id, other.id, "shop", None)
+
+
+def test_renaming_a_project_to_its_own_name_or_casing_is_allowed(db_session):
+    user = _make_user(db_session, "self@example.com")
+    project = project_service.create_project(db_session, user.id, "Shop", None)
+    updated = project_service.update_project(db_session, user.id, project.id, "SHOP", None)
+    assert updated.name == "SHOP"

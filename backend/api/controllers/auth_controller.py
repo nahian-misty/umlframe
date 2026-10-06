@@ -9,18 +9,24 @@ from backend.services.auth_service import (
     EmailAlreadyRegisteredError,
     IncorrectPasswordError,
     InvalidCredentialsError,
+    UsernameAlreadyTakenError,
 )
 
 
 def _to_token_response(user: User) -> TokenResponse:
     token = auth_service.create_access_token(user)
-    return TokenResponse(access_token=token, user=UserResponse(id=user.id, email=user.email))
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(id=user.id, email=user.email, username=user.username),
+    )
 
 
 async def register(request: RegisterRequest, db: Session) -> TokenResponse:
     try:
-        user = auth_service.register_user(db, request.email, request.password)
-    except EmailAlreadyRegisteredError as exc:
+        user = auth_service.register_user(
+            db, request.email, request.password, request.username
+        )
+    except (EmailAlreadyRegisteredError, UsernameAlreadyTakenError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -46,7 +52,9 @@ async def logout(current_user: User) -> dict[str, str]:
 
 
 async def get_me(current_user: User) -> UserResponse:
-    return UserResponse(id=current_user.id, email=current_user.email)
+    return UserResponse(
+        id=current_user.id, email=current_user.email, username=current_user.username
+    )
 
 
 async def change_password(
