@@ -11,6 +11,7 @@ from backend.api.routes import (
     auth,
     codegen,
     image,
+    implementation,
     mermaid,
     projects,
     reverse,
@@ -43,3 +44,4 @@ app.include_router(mermaid.router)
 app.include_router(activity_codegen.router)
 app.include_router(activity_image.router)
 app.include_router(activity_render.router)
+app.include_router(implementation.router)

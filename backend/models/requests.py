@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from backend.db.usernames import MAX_USERNAME_LENGTH, MIN_USERNAME_LENGTH, USERNAME_PATTERN
 from backend.generator.registry import SUPPORTED_LANGUAGES
+from backend.llm.prompts import MAX_INSTRUCTIONS_LENGTH
 from backend.models.project_state import DEFAULT_PROJECT_TYPE, CodeInputs, ProjectType
 from backend.reverse.registry import SUPPORTED_LANGUAGES as REVERSE_SUPPORTED_LANGUAGES
 from backend.schemas.activity import ActivityDocument
@@ -14,6 +16,19 @@ from backend.schemas.uml import UmlDocument
 class GenerateCodeRequest(BaseModel):
     document: UmlDocument
     language: str
+
+    @field_validator("language")
+    @classmethod
+    def language_must_be_supported(cls, v: str) -> str:
+        if v not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language '{v}'. Supported: {SUPPORTED_LANGUAGES}")
+        return v
+
+
+class ImplementCodeRequest(BaseModel):
+    document: UmlDocument
+    language: str
+    instructions: str = Field(default="", max_length=MAX_INSTRUCTIONS_LENGTH)
 
     @field_validator("language")
     @classmethod
@@ -96,6 +111,21 @@ def _check_password_length(value: str) -> str:
 class RegisterRequest(BaseModel):
     email: str
     password: str
+    username: str | None = None
+
+    @field_validator("username")
+    @classmethod
+    def username_must_be_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        name = v.strip()
+        if not MIN_USERNAME_LENGTH <= len(name) <= MAX_USERNAME_LENGTH:
+            raise ValueError(
+                f"Username must be {MIN_USERNAME_LENGTH}-{MAX_USERNAME_LENGTH} characters"
+            )
+        if not USERNAME_PATTERN.match(name):
+            raise ValueError("Username may only contain letters, numbers, '.', '_' and '-'")
+        return name
 
     @field_validator("email")
     @classmethod

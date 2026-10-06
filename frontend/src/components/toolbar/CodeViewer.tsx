@@ -1,13 +1,16 @@
 import { useState } from 'react';
 
+import type { ImplementResult } from '../../api/implementApi';
 import styles from './CodeViewer.module.css';
 
 interface CodeViewerProps {
   files: Record<string, string>;
+  /** Present when the bodies were written by a language model. */
+  aiReport?: Omit<ImplementResult, 'files'> | null;
   onClose: () => void;
 }
 
-export function CodeViewer({ files, onClose }: CodeViewerProps) {
+export function CodeViewer({ files, aiReport = null, onClose }: CodeViewerProps) {
   const filenames = Object.keys(files);
   const [activeFile, setActiveFile] = useState(filenames[0] ?? '');
   const content = files[activeFile] ?? '';
@@ -35,6 +38,26 @@ export function CodeViewer({ files, onClose }: CodeViewerProps) {
             ×
           </button>
         </div>
+        {aiReport && (
+          <div className={styles.aiBanner} role="note">
+            <strong>AI-written method bodies — review before use.</strong> Implemented{' '}
+            {aiReport.implemented.length} of {aiReport.implemented.length + aiReport.skipped.length}{' '}
+            methods
+            {aiReport.models.length > 0 && <> using {aiReport.models.join(', ')}</>}.
+            {aiReport.skipped.length > 0 && (
+              <details className={styles.aiSkipped}>
+                <summary>{aiReport.skipped.length} kept as stubs</summary>
+                <ul>
+                  {aiReport.skipped.map((skip) => (
+                    <li key={skip.key}>
+                      <code>{skip.key}</code>: {skip.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
         <div className={styles.tabs}>
           {filenames.map((name) => (
             <button

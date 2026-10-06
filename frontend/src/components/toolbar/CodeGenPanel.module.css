@@ -14,3 +14,44 @@
   white-space: normal;
   overflow-wrap: break-word;
 }
+
+.aiToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.aiToggle input:disabled,
+.aiToggle:has(input:disabled) {
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+}
+
+.aiNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.aiNotes textarea {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.aiNotes textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
