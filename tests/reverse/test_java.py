@@ -184,10 +184,11 @@ def test_composition_via_direct_instantiation():
     assert edges[0].multiplicity.destination == "1"
 
 
-def test_aggregation_via_declared_field_not_instantiated():
+def test_single_declared_field_not_instantiated_is_association():
     doc = parse(_load("composition_aggregation.java"))
     car, person = _cls(doc, "Car"), _cls(doc, "Person")
-    edges = _rels(doc, car, person, RelationshipType.AGGREGATION)
+    assert _rels(doc, car, person, RelationshipType.AGGREGATION) == []
+    edges = _rels(doc, car, person, RelationshipType.ASSOCIATION)
     assert len(edges) == 1
     assert edges[0].multiplicity.destination == "1"
 
@@ -206,21 +207,21 @@ def test_many_multiplicity_from_list_field():
 # ---------------------------------------------------------------------------
 
 
-def test_association_via_method_parameter_and_return_type():
+def test_dependency_via_method_parameter_and_return_type():
     doc = parse(_load("association.java"))
     mechanic, car = _cls(doc, "Mechanic"), _cls(doc, "Car")
-    edges = _rels(doc, mechanic, car, RelationshipType.ASSOCIATION)
+    edges = _rels(doc, mechanic, car, RelationshipType.DEPENDENCY)
     # same class referenced as both param and return type -> one edge, not two
     assert len(edges) == 1
 
 
-def test_association_excluded_when_already_aggregated():
+def test_dependency_excluded_when_already_held_as_field():
     doc = parse(_load("composition_aggregation.java"))
     car, person = _cls(doc, "Car"), _cls(doc, "Person")
-    # registerOwner(Person owner) would otherwise imply association, but
-    # Person is already owned via aggregation from the same source -> excluded
-    assert _rels(doc, car, person, RelationshipType.ASSOCIATION) == []
-    assert len(doc.relationships) == 3  # composition + aggregation + aggregation(many) only
+    # registerOwner(Person owner) would otherwise imply a dependency, but Person is
+    # already held as a field -> the stronger relationship wins
+    assert _rels(doc, car, person, RelationshipType.DEPENDENCY) == []
+    assert len(doc.relationships) == 3  # composition + association + aggregation(many) only
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +246,7 @@ class Car {
 """
     doc = parse(source)
     assert len(doc.relationships) == 1
-    assert doc.relationships[0].type == RelationshipType.AGGREGATION
+    assert doc.relationships[0].type == RelationshipType.ASSOCIATION
 
 
 def test_nested_class_is_not_discovered():
@@ -259,7 +260,7 @@ class Outer {
     assert [c.name for c in doc.classes] == ["Outer"]
 
 
-def test_interface_is_not_discovered_as_a_class():
+def test_interface_is_discovered_with_interface_kind():
     source = """
 interface Runnable {
     void run();
@@ -271,7 +272,29 @@ class Task implements Runnable {
 }
 """
     doc = parse(source)
-    assert [c.name for c in doc.classes] == ["Task"]
+    assert [(c.name, c.kind.value) for c in doc.classes] == [
+        ("Runnable", "interface"),
+        ("Task", "class"),
+    ]
+    assert [m.name for m in doc.classes[0].methods] == ["run"]
+    assert doc.classes[0].methods[0].abstract is True
+
+
+def test_implements_becomes_a_realization_edge():
+    source = """
+interface Runnable { void run(); }
+class Task implements Runnable { public void run() {} }
+"""
+    doc = parse(source)
+    ids = {c.name: c.id for c in doc.classes}
+    assert [(r.source, r.destination, r.type.value) for r in doc.relationships] == [
+        (ids["Task"], ids["Runnable"], "realization")
+    ]
+
+
+def test_abstract_class_has_abstract_kind():
+    doc = parse("abstract class Shape { abstract double area(); }")
+    assert doc.classes[0].kind.value == "abstract"
 
 
 def test_invalid_syntax_raises_value_error():
@@ -283,3 +306,52 @@ def test_empty_source_returns_empty_document():
     doc = parse("")
     assert doc.classes == []
     assert doc.relationships == []
+
+
+def test_field_initializer_instantiation_is_composition():
+    source = """
+class Engine {}
+
+class Car {
+    private Engine engine = new Engine();
+}
+"""
+    doc = parse(source)
+    assert [r.type for r in doc.relationships] == [RelationshipType.COMPOSITION]
+
+
+_CART_TEMPLATE = """
+import java.util.*;
+class CartItem {{}}
+class ShoppingCart {{
+    private List<CartItem> items = new ArrayList<>();
+    void add({param}) {{
+        {body}
+    }}
+}}
+"""
+
+
+def _cart_composition(param: str, body: str) -> list:
+    doc = parse(_CART_TEMPLATE.format(param=param, body=body))
+    return _rels(doc, _cls(doc, "ShoppingCart"), _cls(doc, "CartItem"), RelationshipType.COMPOSITION)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "CartItem item = new CartItem(); items.add(item);",
+        "items.add(new CartItem());",
+        "CartItem item = new CartItem(); this.items.add(item);",
+    ],
+)
+def test_collection_filled_with_created_instances_is_composition_many(body):
+    edges = _cart_composition("int quantity", body)
+    assert len(edges) == 1 and edges[0].multiplicity.destination == "*"
+
+
+def test_adding_an_injected_parameter_stays_aggregation():
+    doc = parse(_CART_TEMPLATE.format(param="CartItem item", body="items.add(item);"))
+    cart, item = _cls(doc, "ShoppingCart"), _cls(doc, "CartItem")
+    assert not _rels(doc, cart, item, RelationshipType.COMPOSITION)
+    assert len(_rels(doc, cart, item, RelationshipType.AGGREGATION)) == 1

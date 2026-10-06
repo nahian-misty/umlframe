@@ -31,7 +31,7 @@ class Calc {
     doc = extract_control_flow(source, "Calc", "run")
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 1
-    assert actions[0].label == "let y = x + 1; let z = y * 2; return z"
+    assert actions[0].label == "Calculate y; Calculate z; Return z"
     start = _nodes_by_type(doc, ActivityNodeType.START)[0]
     end = _nodes_by_type(doc, ActivityNodeType.END)[0]
     assert _edge(doc, start.id, actions[0].id)
@@ -77,8 +77,8 @@ class Calc {
     decision = _nodes_by_type(doc, ActivityNodeType.DECISION)[0]
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 2
-    doubling = next(a for a in actions if "x * 2" in a.label)
-    returning = next(a for a in actions if a.label == "return x")
+    doubling = next(a for a in actions if a.label == "Calculate x")
+    returning = next(a for a in actions if a.label == "Return x")
 
     yes_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "yes")
     no_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "no")
@@ -139,10 +139,10 @@ class Calc {
     doc = extract_control_flow(source, "Calc", "safeDiv")
     assert _flow(doc) == {
         ("start", "", "exception thrown?"),
-        ("exception thrown?", "yes", "return 0"),
-        ("exception thrown?", "no", "return a / b"),
-        ("return 0", "", "end"),
-        ("return a / b", "", "end"),
+        ("exception thrown?", "yes", "Return 0"),
+        ("exception thrown?", "no", "Return result"),
+        ("Return 0", "", "end"),
+        ("Return result", "", "end"),
     }
 
 
@@ -157,13 +157,13 @@ class S {
 """
     assert _flow(extract_control_flow(source, "S", "f")) == {
         ("start", "", "exception thrown?"),
-        ("exception thrown?", "yes", "b()"),
-        ("exception thrown?", "no", "a()"),
-        ("a()", "", "finally"),
-        ("b()", "", "finally"),
-        ("finally", "", "d()"),
-        ("d()", "", "e()"),
-        ("e()", "", "end"),
+        ("exception thrown?", "yes", "B"),
+        ("exception thrown?", "no", "A"),
+        ("A", "", "finally"),
+        ("B", "", "finally"),
+        ("finally", "", "D"),
+        ("D", "", "E"),
+        ("E", "", "end"),
     }
 
 

@@ -29,7 +29,7 @@ class Calc:
     doc = extract_control_flow(source, "Calc", "run")
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 1
-    assert actions[0].label == "y = x + 1; z = y * 2; return z"
+    assert actions[0].label == "Calculate y; Calculate z; Return z"
     start = _nodes_by_type(doc, ActivityNodeType.START)[0]
     end = _nodes_by_type(doc, ActivityNodeType.END)[0]
     assert _edge(doc, start.id, actions[0].id)
@@ -45,7 +45,7 @@ class Calc:
     doc = extract_control_flow(source, "Calc", "noop")
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 1  # `pass` still renders as a statement, not skipped
-    assert actions[0].label == "pass"
+    assert actions[0].label == "Do nothing"
 
 
 def test_docstring_only_body_skips_docstring_and_connects_directly():
@@ -94,8 +94,8 @@ class Calc:
     decision = _nodes_by_type(doc, ActivityNodeType.DECISION)[0]
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 2  # "x = x * 2" and "return x"
-    doubling = next(a for a in actions if "x * 2" in a.label)
-    returning = next(a for a in actions if a.label == "return x")
+    doubling = next(a for a in actions if a.label == "Calculate x")
+    returning = next(a for a in actions if a.label == "Return x")
 
     yes_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "yes")
     no_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "no")
@@ -149,10 +149,10 @@ class Calc:
     doc = extract_control_flow(source, "Calc", "safe_div")
     assert _flow(doc) == {
         ("start", "", "except ZeroDivisionError?"),
-        ("except ZeroDivisionError?", "yes", "return 0"),
-        ("except ZeroDivisionError?", "no", "return a / b"),
-        ("return 0", "", "end"),
-        ("return a / b", "", "end"),
+        ("except ZeroDivisionError?", "yes", "Return 0"),
+        ("except ZeroDivisionError?", "no", "Return result"),
+        ("Return 0", "", "end"),
+        ("Return result", "", "end"),
     }
 
 
@@ -172,14 +172,14 @@ class S:
 """
     assert _flow(extract_control_flow(source, "S", "f")) == {
         ("start", "", "except KeyError?"),
-        ("except KeyError?", "yes", "b()"),
-        ("except KeyError?", "no", "a()"),
-        ("a()", "", "c()"),
-        ("c()", "", "finally"),
-        ("b()", "", "finally"),
-        ("finally", "", "d()"),
-        ("d()", "", "e()"),
-        ("e()", "", "end"),
+        ("except KeyError?", "yes", "B"),
+        ("except KeyError?", "no", "A"),
+        ("A", "", "C"),
+        ("C", "", "finally"),
+        ("B", "", "finally"),
+        ("finally", "", "D"),
+        ("D", "", "E"),
+        ("E", "", "end"),
     }
 
 
@@ -199,16 +199,16 @@ class S:
     assert _flow(extract_control_flow(source, "S", "f")) == {
         ("start", "", "exception raised?"),
         ("exception raised?", "yes", "except ValueError?"),
-        ("exception raised?", "no", "a()"),
-        ("except ValueError?", "yes", "b()"),
+        ("exception raised?", "no", "A"),
+        ("except ValueError?", "yes", "B"),
         ("except ValueError?", "no", "except TypeError?"),
-        ("except TypeError?", "yes", "c()"),
+        ("except TypeError?", "yes", "C"),
         ("except TypeError?", "no", "finally"),
-        ("a()", "", "finally"),
-        ("b()", "", "finally"),
-        ("c()", "", "finally"),
-        ("finally", "", "d()"),
-        ("d()", "", "end"),
+        ("A", "", "finally"),
+        ("B", "", "finally"),
+        ("C", "", "finally"),
+        ("finally", "", "D"),
+        ("D", "", "end"),
     }
 
 
@@ -224,7 +224,7 @@ class S:
             c()
 """
     flow = _flow(extract_control_flow(source, "S", "f"))
-    assert ("except ValueError?", "no", "c()") in flow
+    assert ("except ValueError?", "no", "C") in flow
 
 
 def test_try_finally_without_handlers_has_no_decision():
@@ -237,10 +237,10 @@ class S:
             d()
 """
     assert _flow(extract_control_flow(source, "S", "f")) == {
-        ("start", "", "a()"),
-        ("a()", "", "finally"),
-        ("finally", "", "d()"),
-        ("d()", "", "end"),
+        ("start", "", "A"),
+        ("A", "", "finally"),
+        ("finally", "", "D"),
+        ("D", "", "end"),
     }
 
 

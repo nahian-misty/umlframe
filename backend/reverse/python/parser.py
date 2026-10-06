@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 
+from backend.reverse.phrasing import describe_steps
 from backend.schemas.activity import ActivityDocument, ActivityEdge, ActivityNode, ActivityNodeType
 from backend.schemas.uml import (
     Attribute,
+    ClassKind,
     Method,
     Multiplicity,
     Parameter,
@@ -36,6 +39,51 @@ _CONTAINER_NEUTRAL_MAP = {
     "tuple": "List", "Tuple": "List",
     "dict": "Map", "Dict": "Map",
 }
+
+# Last resort for a parameter with no annotation, default or docs: its *name*. A parameter called
+# `teacher` / `professors` is taken to be a Teacher / list of Professors when such a class exists,
+# and a few ubiquitous names (`name`, `age`, `price`, `is_active`) get their obvious plain type.
+_STRING_NAMES = frozenset({
+    "name", "title", "brand", "label", "email", "description", "address", "city", "country",
+    "color", "colour", "model", "text", "message", "username", "password", "surname", "isbn", "phone",
+})
+_INT_NAMES = frozenset({"age", "id", "count", "quantity", "year", "size", "number", "num", "index", "pages"})
+_FLOAT_NAMES = frozenset({"price", "salary", "amount", "balance", "rate", "weight", "height", "cost"})
+_BOOL_PREFIXES = frozenset({"is", "has", "can", "should"})
+_NAME_WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+
+
+def _singular(word: str) -> str:
+    if word.endswith("ies") and len(word) > 3:
+        return word[:-3] + "y"
+    if word.endswith("es") and len(word) > 3:
+        return word[:-2]
+    if word.endswith("s") and len(word) > 2:
+        return word[:-1]
+    return word
+
+
+def _name_hint_type(name: str, class_names: set[str]) -> str | None:
+    """The type a parameter's *name* suggests (see the note above), else None."""
+    words = [w.lower() for w in _NAME_WORDS.findall(name)]
+    if not words:
+        return None
+    last = words[-1]
+    by_lower = {c.lower(): c for c in class_names}
+    if last in by_lower:
+        return by_lower[last]
+    if _singular(last) in by_lower:
+        return f"List[{by_lower[_singular(last)]}]"
+    if words[0] in _BOOL_PREFIXES and len(words) > 1:
+        return "bool"
+    if last in _STRING_NAMES:
+        return "String"
+    if last in _INT_NAMES:
+        return "int"
+    if last in _FLOAT_NAMES:
+        return "float"
+    return None
+
 
 # Outer (neutral) container names treated as "many" for multiplicity inference.
 _MANY_CONTAINERS = {"List", "Set"}
@@ -77,6 +125,7 @@ class _AttrRelInfo:
     target_class: str
     origin: str  # "instantiation" | "param-passthrough" | "annotated-only"
     many: bool
+    attr_name: str = ""
 
 
 def parse(source: str) -> UmlDocument:
@@ -100,6 +149,13 @@ def parse(source: str) -> UmlDocument:
         classes.append(uml_class)
         edges.extend(class_edges)
 
+    interfaces = {cls.id for cls in classes if cls.kind == ClassKind.INTERFACE}
+    for edge in edges:
+        # A concrete class deriving from an interface implements it.
+        if edge.type == RelationshipType.INHERITANCE and edge.dest_id in interfaces:
+            owner = next(cls for cls in classes if cls.id == edge.source_id)
+            if owner.kind != ClassKind.INTERFACE:
+                edge.type = RelationshipType.REALIZATION
     return UmlDocument(classes=classes, relationships=_dedupe_and_number(edges))
 
 
@@ -115,12 +171,17 @@ def _build_class(
     known_classes: set[str],
     class_ids: dict[str, str],
 ) -> tuple[UmlClass, list[_RelEdge]]:
-    static_attrs, static_rel_info = _static_attributes(node, known_classes)
-    init_node = _find_init(node)
-    instance_attrs, instance_rel_info = (
-        _instance_attributes(init_node, known_classes) if init_node is not None else ([], [])
-    )
+    instance_style = _is_instance_style(node)
+    static_attrs, static_rel_info = _static_attributes(node, known_classes, instance_style)
+    functions = _functions_init_first(node)
+    instance_attrs, instance_rel_info = _instance_attributes(functions, known_classes)
+    # A class-level declaration (`name: str`) and `self.name = name` describe one attribute.
+    declared = {a.name for a in static_attrs}
+    instance_attrs = [a for a in instance_attrs if a.name not in declared]
+    attributes = static_attrs + instance_attrs
     all_rel_info = static_rel_info + instance_rel_info
+    _add_collection_items(functions, attributes, all_rel_info, known_classes)
+    field_types = {a.name: a.datatype for a in attributes if a.datatype.lower() != "object"}
 
     edges: list[_RelEdge] = []
     owned_targets: set[str] = set()
@@ -132,25 +193,59 @@ def _build_class(
         edges.append(_RelEdge(class_id, class_ids[info.target_class], rel_type, info.many))
 
     methods: list[Method] = []
-    for stmt in node.body:
-        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name != "__init__":
-            methods.append(_build_method(stmt))
-            edges.extend(_association_edges(stmt, class_id, node.name, known_classes, class_ids, owned_targets))
+    for func in functions:
+        if func.name != "__init__":
+            methods.append(_build_method(func, known_classes, field_types))
+        edges.extend(_dependency_edges(func, class_id, node.name, known_classes, class_ids, owned_targets))
 
     for base in node.bases:
-        if isinstance(base, ast.Name) and base.id in known_classes and base.id != node.name:
-            edges.append(_RelEdge(class_id, class_ids[base.id], RelationshipType.INHERITANCE, many=False))
+        base_name = _base_class_name(base)
+        if base_name in known_classes and base_name != node.name:
+            edges.append(_RelEdge(class_id, class_ids[base_name], RelationshipType.INHERITANCE, many=False))
 
     position, size = _layout(index)
     uml_class = UmlClass(
         id=class_id,
         name=node.name,
-        attributes=static_attrs + instance_attrs,
+        kind=_class_kind(node, methods, attributes),
+        attributes=attributes,
         methods=methods,
         position=position,
         size=size,
     )
     return uml_class, edges
+
+
+_INTERFACE_BASES = frozenset({"Protocol"})
+_ABSTRACT_BASES = frozenset({"ABC"})
+
+
+def _base_names(node: ast.ClassDef) -> set[str]:
+    """Names of the bases, whether written `ABC`, `abc.ABC` or `Protocol[T]`."""
+    names: set[str] = set()
+    for base in node.bases:
+        target = base.value if isinstance(base, ast.Subscript) else base
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+        elif isinstance(target, ast.Attribute):
+            names.add(target.attr)
+    if any(isinstance(kw.value, (ast.Name, ast.Attribute)) and "ABCMeta" in ast.unparse(kw.value)
+           for kw in node.keywords):
+        names.add("ABC")
+    return names
+
+
+def _class_kind(node: ast.ClassDef, methods: list[Method], attributes: list[Attribute]) -> ClassKind:
+    """A Protocol is an interface; an ABC (or any class with an abstract method) is an
+    abstract class -- unless it declares nothing but abstract methods, which is an interface."""
+    bases = _base_names(node)
+    if bases & _INTERFACE_BASES:
+        return ClassKind.INTERFACE
+    has_abstract = any(m.abstract for m in methods)
+    if bases & _ABSTRACT_BASES or has_abstract:
+        only_abstract = bool(methods) and not attributes and all(m.abstract for m in methods)
+        return ClassKind.INTERFACE if only_abstract else ClassKind.ABSTRACT
+    return ClassKind.CLASS
 
 
 def _attribute_relationship_type(info: _AttrRelInfo) -> RelationshipType:
@@ -173,8 +268,29 @@ def _find_init(node: ast.ClassDef) -> ast.FunctionDef | None:
 # ---------------------------------------------------------------------------
 
 
+_INSTANCE_STYLE_DECORATORS = frozenset({"dataclass", "define", "frozen", "s"})
+_INSTANCE_STYLE_BASES = frozenset({"BaseModel", "NamedTuple", "TypedDict"})
+
+
+def _is_instance_style(node: ast.ClassDef) -> bool:
+    """Dataclass-like classes (@dataclass, pydantic, NamedTuple...) declare *instance* fields
+    at class level, so `x: int = 0` there is not a static attribute."""
+    decorators = {
+        _name_of(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list
+    }
+    return bool(decorators & _INSTANCE_STYLE_DECORATORS or _base_names(node) & _INSTANCE_STYLE_BASES)
+
+
+def _unwrap_classvar(annotation: ast.expr) -> tuple[bool, ast.expr | None]:
+    if isinstance(annotation, ast.Subscript) and _name_of(annotation.value) == "ClassVar":
+        return True, annotation.slice
+    if _name_of(annotation) == "ClassVar":
+        return True, None
+    return False, annotation
+
+
 def _static_attributes(
-    node: ast.ClassDef, known_classes: set[str]
+    node: ast.ClassDef, known_classes: set[str], instance_style: bool = False
 ) -> tuple[list[Attribute], list[_AttrRelInfo]]:
     attrs: list[Attribute] = []
     rel_info: list[_AttrRelInfo] = []
@@ -182,15 +298,19 @@ def _static_attributes(
     for stmt in node.body:
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
             name = stmt.target.id
-            is_final, inner = _unwrap_final(stmt.annotation)
+            is_classvar, annotation = _unwrap_classvar(stmt.annotation)
+            is_final, inner = _unwrap_final(annotation) if annotation is not None else (False, None)
             datatype = _annotation_to_str(inner) if inner is not None else "object"
+            # A bare declaration (`name: str`) creates no class attribute at runtime: it is
+            # an instance field. Only a ClassVar, or a value outside a dataclass, is static.
+            is_static = is_classvar or (stmt.value is not None and not instance_style)
             attrs.append(
                 Attribute(
                     name=name,
                     datatype=datatype,
                     visibility=_visibility_from_name(name),
                     default_value=_literal_to_str(stmt.value),
-                    static=True,
+                    static=is_static,
                     final=is_final,
                 )
             )
@@ -198,7 +318,7 @@ def _static_attributes(
                 refs = _extract_class_refs(inner, known_classes)
                 if len(refs) == 1:
                     (target,) = refs
-                    rel_info.append(_AttrRelInfo(target, "annotated-only", _is_many(datatype)))
+                    rel_info.append(_AttrRelInfo(target, "annotated-only", _is_many(datatype), name))
 
         elif (
             isinstance(stmt, ast.Assign)
@@ -223,55 +343,163 @@ def _static_attributes(
     return attrs, rel_info
 
 
+def _functions_init_first(node: ast.ClassDef) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """The class's methods in source order, with `__init__` moved to the front so the
+    constructor's view of an attribute wins over later methods."""
+    functions = [s for s in node.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    return sorted(functions, key=lambda f: f.name != "__init__")
+
+
 def _instance_attributes(
-    init_node: ast.FunctionDef, known_classes: set[str]
+    functions: list[ast.FunctionDef | ast.AsyncFunctionDef], known_classes: set[str]
 ) -> tuple[list[Attribute], list[_AttrRelInfo]]:
-    param_annotations = _init_param_annotations(init_node)
     attrs: list[Attribute] = []
     rel_info: list[_AttrRelInfo] = []
     seen_names: set[str] = set()
 
-    for stmt in _statements_one_level(init_node.body):
-        name, annotation, value = _self_assignment_parts(stmt)
-        if name is None or name in seen_names:
-            continue  # first occurrence of a given self.x wins; no fabricated merge
-        seen_names.add(name)
+    for func in functions:
+        param_annotations = _param_annotations(func)
+        param_types = _param_types(func, known_classes)
+        for stmt in _statements_one_level(func.body):
+            name, annotation, value = _self_assignment_parts(stmt)
+            if name is None or name in seen_names:
+                continue  # first occurrence of a given self.x wins; no fabricated merge
+            seen_names.add(name)
 
-        target_class: str | None = None
-        origin: str | None = None
-        many = False
+            target_class: str | None = None
+            origin: str | None = None
+            many = False
 
-        if annotation is not None:
-            is_final, inner = _unwrap_final(annotation)
-            datatype = _annotation_to_str(inner) if inner is not None else "object"
-            if inner is not None:
-                refs = _extract_class_refs(inner, known_classes)
-                if len(refs) == 1:
-                    (target_class,) = refs
-                    origin = "annotated-only"
-                    many = _is_many(datatype)
-        else:
-            is_final = False
-            datatype, origin, target_class, many = _infer_from_value(value, param_annotations, known_classes)
+            if annotation is not None:
+                is_final, inner = _unwrap_final(annotation)
+                datatype = _annotation_to_str(inner) if inner is not None else "object"
+                if inner is not None:
+                    refs = _extract_class_refs(inner, known_classes)
+                    if len(refs) == 1:
+                        (target_class,) = refs
+                        origin = "annotated-only"
+                        many = _is_many(datatype)
+            else:
+                is_final = False
+                datatype, origin, target_class, many = _infer_from_value(
+                    value, param_annotations, param_types, known_classes
+                )
 
-        attrs.append(
-            Attribute(
-                name=name,
-                datatype=datatype,
-                visibility=_visibility_from_name(name),
-                default_value=_literal_to_str(value),
-                static=False,
-                final=is_final,
+            attrs.append(
+                Attribute(
+                    name=name,
+                    datatype=datatype,
+                    visibility=_visibility_from_name(name),
+                    default_value=_literal_to_str(value),
+                    static=False,
+                    final=is_final,
+                )
             )
-        )
-        if target_class is not None and origin is not None:
-            rel_info.append(_AttrRelInfo(target_class, origin, many))
+            if target_class is not None and origin is not None:
+                rel_info.append(_AttrRelInfo(target_class, origin, many, name))
 
     return attrs, rel_info
 
 
-def _init_param_annotations(init_node: ast.FunctionDef) -> dict[str, ast.expr]:
-    return {a.arg: a.annotation for a in init_node.args.args[1:] if a.annotation is not None}
+def _param_annotations(func: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, ast.expr]:
+    return {a.arg: a.annotation for a in _explicit_params(func) if a.annotation is not None}
+
+
+def _param_types(
+    func: ast.FunctionDef | ast.AsyncFunctionDef, known_classes: set[str] | None = None
+) -> dict[str, str]:
+    """Parameter name -> neutral type: its annotation, else the type of its default value,
+    else (last resort) what its name suggests."""
+    params = _explicit_params(func)
+    defaults = func.args.defaults
+    names = [a.arg for a in params][len(params) - len(defaults):]
+    default_for = dict(zip(names, defaults, strict=True)) if defaults else {}
+    types: dict[str, str] = {}
+    for param in params:
+        if param.annotation is not None:
+            types[param.arg] = _annotation_to_str(param.annotation)
+        elif param.arg in default_for:
+            inferred = _infer_expr_type(default_for[param.arg], set(), {}, {})
+            if inferred is not None:
+                types[param.arg] = inferred
+        if param.arg not in types:
+            hinted = _name_hint_type(param.arg, known_classes or set())
+            if hinted is not None:
+                types[param.arg] = hinted
+    return types
+
+
+def _add_collection_items(
+    functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
+    attributes: list[Attribute],
+    rel_info: list[_AttrRelInfo],
+    known_classes: set[str],
+) -> None:
+    """`self.items.append(Item())` (or `.add(...)`) shows `items` holds many Items: created
+    here -> composition, a passed-in annotated parameter -> aggregation."""
+    by_name = {a.name: i for i, a in enumerate(attributes)}
+    related = {info.attr_name for info in rel_info}
+    for func in functions:
+        annotations = _param_annotations(func)
+        created_locals = _locals_created_from_call(func, known_classes)
+        for call in (n for n in ast.walk(func) if isinstance(n, ast.Call)):
+            found = _collection_target(call, annotations, known_classes, created_locals)
+            if found is None:
+                continue
+            field, item_class, created = found
+            if field not in by_name or field in related:
+                continue
+            related.add(field)
+            attribute = attributes[by_name[field]]
+            if attribute.datatype in ("List", "Set"):
+                attributes[by_name[field]] = attribute.model_copy(
+                    update={"datatype": f"{attribute.datatype}[{item_class}]"}
+                )
+            rel_info.append(_AttrRelInfo(item_class, "instantiation" if created else "param-passthrough", True, field))
+
+
+def _locals_created_from_call(
+    func: ast.FunctionDef | ast.AsyncFunctionDef, known_classes: set[str]
+) -> dict[str, str]:
+    """`item = Known(...)` assignments in a function, as variable name -> class name."""
+    created: dict[str, str] = {}
+    for node in ast.walk(func):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+            continue
+        target, value = node.targets[0], node.value
+        if (
+            isinstance(target, ast.Name)
+            and isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id in known_classes
+        ):
+            created[target.id] = value.func.id
+    return created
+
+
+def _collection_target(
+    call: ast.Call,
+    annotations: dict[str, ast.expr],
+    known_classes: set[str],
+    created_locals: dict[str, str],
+) -> tuple[str, str, bool] | None:
+    """(attribute, item class, created here) for `self.<attr>.append/add(<item>)`."""
+    func = call.func
+    if not (isinstance(func, ast.Attribute) and func.attr in ("append", "add") and len(call.args) == 1):
+        return None
+    holder = func.value
+    if not (_is_self_attribute(holder) and isinstance(holder, ast.Attribute)):
+        return None
+    item = call.args[0]
+    if isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id in known_classes:
+        return holder.attr, item.func.id, True
+    if isinstance(item, ast.Name) and item.id in created_locals:
+        return holder.attr, created_locals[item.id], True
+    if isinstance(item, ast.Name) and item.id in annotations:
+        refs = _extract_class_refs(annotations[item.id], known_classes)
+        if len(refs) == 1:
+            return holder.attr, next(iter(refs)), False
+    return None
 
 
 def _statements_one_level(body: list[ast.stmt]) -> list[ast.stmt]:
@@ -315,11 +543,18 @@ def _is_self_attribute(node: ast.expr) -> bool:
 
 
 def _infer_from_value(
-    value: ast.expr | None, param_annotations: dict[str, ast.expr], known_classes: set[str]
+    value: ast.expr | None,
+    param_annotations: dict[str, ast.expr],
+    param_types: dict[str, str],
+    known_classes: set[str],
 ) -> tuple[str, str | None, str | None, bool]:
     """(datatype, origin, target_class, many) inferred from an unannotated `self.x = <value>`."""
     if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in known_classes:
         return value.func.id, "instantiation", value.func.id, False
+
+    created = _created_collection(value, known_classes)
+    if created is not None:
+        return f"{created[0]}[{created[1]}]", "instantiation", created[1], True
 
     if isinstance(value, ast.Name) and value.id in param_annotations:
         annotation = param_annotations[value.id]
@@ -332,18 +567,111 @@ def _infer_from_value(
         # (`def __init__(self, name: str): self.name = name` is a String, not an object).
         return _annotation_to_str(annotation), None, None, False
 
-    if isinstance(value, ast.Constant):
+    if isinstance(value, ast.Name) and value.id in param_types:
+        datatype = param_types[value.id]
+        targets = {w for w in re.findall(r"\w+", datatype) if w in known_classes}
+        if len(targets) == 1:
+            return datatype, "param-passthrough", next(iter(targets)), _is_many(datatype)
+        return datatype, None, None, False
+
+    if isinstance(value, ast.Constant) and value.value is not None:
         return _literal_datatype(value.value), None, None, False
 
-    if type(value) in _LITERAL_NODE_TYPES:
-        return _LITERAL_NODE_TYPES[type(value)], None, None, False
+    inferred = _infer_expr_type(value, known_classes, param_types, {})
+    return (inferred if inferred is not None else "object"), None, None, False
 
-    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
-        builtin_type = _BUILTIN_CALL_TYPES.get(value.func.id)
-        if builtin_type is not None:
-            return builtin_type, None, None, False
 
-    return "object", None, None, False
+def _created_collection(value: ast.expr | None, known_classes: set[str]) -> tuple[str, str] | None:
+    """(container, class) for `[Known(), Known()]` -- a collection built from new instances."""
+    if not isinstance(value, (ast.List, ast.Tuple, ast.Set)) or not value.elts:
+        return None
+    classes = {
+        e.func.id if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) else None
+        for e in value.elts
+    }
+    if len(classes) != 1:
+        return None
+    (name,) = classes
+    if name is None or name not in known_classes:
+        return None
+    return ("Set" if isinstance(value, ast.Set) else "List"), name
+
+
+_STRING_METHODS = frozenset({"join", "format", "upper", "lower", "strip", "title", "replace", "capitalize"})
+_BOOL_METHODS = frozenset({"startswith", "endswith", "isdigit", "isalpha", "issubset"})
+_NUMERIC = frozenset({"int", "float"})
+
+
+def _infer_expr_type(
+    node: ast.expr | None,
+    known_classes: set[str],
+    param_types: dict[str, str],
+    field_types: dict[str, str],
+) -> str | None:
+    """The provable neutral type of an expression, or None when it cannot be known."""
+    if node is None:
+        return None
+    if isinstance(node, ast.Constant):
+        return None if node.value is None else _literal_datatype(node.value)
+    if type(node) in _LITERAL_NODE_TYPES:
+        created = _created_collection(node, known_classes)
+        return f"{created[0]}[{created[1]}]" if created else _LITERAL_NODE_TYPES[type(node)]
+    if isinstance(node, ast.Name):
+        return param_types.get(node.id)
+    if isinstance(node, ast.Attribute):
+        return field_types.get(node.attr) if _is_self_attribute(node) else None
+    if isinstance(node, ast.Call):
+        return _infer_call_type(node, known_classes)
+    if isinstance(node, (ast.Compare, ast.UnaryOp)) and (
+        isinstance(node, ast.Compare) or isinstance(node.op, ast.Not)
+    ):
+        return "bool"
+    if isinstance(node, ast.UnaryOp):
+        inner = _infer_expr_type(node.operand, known_classes, param_types, field_types)
+        return inner if inner in _NUMERIC else None
+    if isinstance(node, ast.BinOp):
+        return _infer_binop_type(node, known_classes, param_types, field_types)
+    if isinstance(node, (ast.BoolOp, ast.IfExp)):
+        branches = node.values if isinstance(node, ast.BoolOp) else [node.body, node.orelse]
+        types = {_infer_expr_type(b, known_classes, param_types, field_types) for b in branches}
+        return types.pop() if len(types) == 1 else None
+    if isinstance(node, ast.Await):
+        return _infer_expr_type(node.value, known_classes, param_types, field_types)
+    return None
+
+
+def _infer_call_type(node: ast.Call, known_classes: set[str]) -> str | None:
+    func = node.func
+    if isinstance(func, ast.Name):
+        if func.id in known_classes:
+            return func.id
+        if func.id == "len":
+            return "int"
+        return _BUILTIN_CALL_TYPES.get(func.id)
+    if isinstance(func, ast.Attribute):
+        if func.attr in _STRING_METHODS:
+            return "String"
+        if func.attr in _BOOL_METHODS:
+            return "bool"
+    return None
+
+
+def _infer_binop_type(
+    node: ast.BinOp,
+    known_classes: set[str],
+    param_types: dict[str, str],
+    field_types: dict[str, str],
+) -> str | None:
+    left = _infer_expr_type(node.left, known_classes, param_types, field_types)
+    right = _infer_expr_type(node.right, known_classes, param_types, field_types)
+    if isinstance(node.op, ast.Add) and "String" in (left, right):
+        return "String"
+    if isinstance(node.op, ast.Mod) and left == "String":
+        return "String"
+    if left in _NUMERIC and right in _NUMERIC:
+        both_int = left == right == "int"
+        return "int" if both_int and not isinstance(node.op, (ast.Div, ast.Pow)) else "float"
+    return None
 
 
 def _literal_datatype(value: object) -> str:
@@ -381,16 +709,23 @@ def _name_of(node: ast.expr) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Method:
+def _build_method(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    known_classes: set[str],
+    field_types: dict[str, str],
+) -> Method:
     decorator_names = {_name_of(d) for d in node.decorator_list}
     is_static = _is_static_decorator(node) or "classmethod" in decorator_names
     is_abstract = "abstractmethod" in decorator_names or _raises_not_implemented(node)
 
+    param_types = _param_types(node, known_classes)
     params = [
-        Parameter(name=a.arg, datatype=_annotation_to_str(a.annotation) if a.annotation is not None else "object")
-        for a in _explicit_params(node)
+        Parameter(name=a.arg, datatype=param_types.get(a.arg, "object")) for a in _explicit_params(node)
     ]
-    return_type = _annotation_to_str(node.returns) if node.returns is not None else "void"
+    if node.returns is not None:
+        return_type = _annotation_to_str(node.returns)
+    else:
+        return_type = _inferred_return_type(node, known_classes, param_types, field_types)
 
     return Method(
         name=node.name,
@@ -400,6 +735,58 @@ def _build_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Method:
         static=is_static,
         abstract=is_abstract,
     )
+
+
+def _local_types(
+    assignments: list[ast.Assign | ast.AnnAssign],
+    known_classes: set[str],
+    param_types: dict[str, str],
+    field_types: dict[str, str],
+) -> dict[str, str]:
+    """Local variable -> type, for a name only ever bound to values of one provable type."""
+    found: dict[str, set[str | None]] = {}
+    for stmt in sorted(assignments, key=lambda a: a.lineno):
+        targets: list[ast.expr]
+        kind: str | None
+        if isinstance(stmt, ast.AnnAssign):
+            targets, kind = [stmt.target], _annotation_to_str(stmt.annotation)
+        else:
+            targets = list(stmt.targets)
+            kind = _infer_expr_type(stmt.value, known_classes, param_types, field_types)
+        for target in targets:
+            if isinstance(target, ast.Name):
+                found.setdefault(target.id, set()).add(kind)
+    return {n: kinds.pop() for n, kinds in found.items() if len(kinds) == 1 and None not in kinds}  # type: ignore[misc]
+
+
+def _inferred_return_type(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    known_classes: set[str],
+    param_types: dict[str, str],
+    field_types: dict[str, str],
+) -> str:
+    """No annotation: what every `return <value>` provably yields; `void` when nothing is
+    returned; `Object` when a value is returned whose type cannot be proven."""
+    values: list[ast.expr | None] = []
+    assignments: list[ast.Assign | ast.AnnAssign] = []
+    stack: list[ast.AST] = list(node.body)
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue  # a nested scope's returns are not this method's
+        if isinstance(current, ast.Return):
+            values.append(current.value)
+        elif isinstance(current, (ast.Assign, ast.AnnAssign)):
+            assignments.append(current)
+        stack.extend(ast.iter_child_nodes(current))
+    param_types = {**_local_types(assignments, known_classes, param_types, field_types), **param_types}
+    returned = [v for v in values if v is not None and not (isinstance(v, ast.Constant) and v.value is None)]
+    if not returned:
+        return "void"
+    types = {_infer_expr_type(v, known_classes, param_types, field_types) for v in returned}
+    if len(types) == 1 and None not in types:
+        return types.pop() or "Object"
+    return "Object"
 
 
 def _is_static_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -426,12 +813,12 @@ def _raises_not_implemented(node: ast.FunctionDef | ast.AsyncFunctionDef) -> boo
 
 
 # ---------------------------------------------------------------------------
-# Relationships — inheritance (in _build_class) + aggregation/composition
-# (from attribute rel_info, in _build_class) + association (below)
+# Relationships — inheritance (in _build_class) + association/aggregation/composition
+# (from attribute rel_info, in _build_class) + dependency (below)
 # ---------------------------------------------------------------------------
 
 
-def _association_edges(
+def _dependency_edges(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     class_id: str,
     class_name: str,
@@ -439,19 +826,31 @@ def _association_edges(
     class_ids: dict[str, str],
     owned_targets: set[str],
 ) -> list[_RelEdge]:
+    """A class the method visibly uses -- in a parameter/return annotation, or by name in its
+    body (`Known(...)`, `Known.make()`, `isinstance(x, Known)`) -- without holding it."""
     referenced: set[str] = set()
     for a in _explicit_params(node):
         if a.annotation is not None:
             referenced |= _extract_class_refs(a.annotation, known_classes)
     if node.returns is not None:
         referenced |= _extract_class_refs(node.returns, known_classes)
+    referenced |= {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and n.id in known_classes}
+    for hinted in _param_types(node, known_classes).values():
+        referenced |= {w for w in re.findall(r"\w+", hinted) if w in known_classes}
     referenced.discard(class_name)
-    referenced -= owned_targets  # "uses but doesn't own" — complement of aggregation/composition
+    referenced -= owned_targets  # already held as an attribute: a stronger relationship exists
 
     return [
-        _RelEdge(class_id, class_ids[target], RelationshipType.ASSOCIATION, many=False)
+        _RelEdge(class_id, class_ids[target], RelationshipType.DEPENDENCY, many=False)
         for target in sorted(referenced)
     ]
+
+
+def _base_class_name(base: ast.expr) -> str | None:
+    """The class a base expression names: `Base`, `pkg.Base` or `Base[T]`."""
+    if isinstance(base, ast.Subscript):
+        base = base.value
+    return _name_of(base)
 
 
 def _dedupe_and_number(edges: list[_RelEdge]) -> list[Relationship]:
@@ -660,7 +1059,7 @@ def _walk_block(
         nonlocal current, buffer
         if not buffer:
             return
-        node_id = builder.add_node(ActivityNodeType.ACTION, _truncate("; ".join(buffer)))
+        node_id = builder.add_node(ActivityNodeType.ACTION, _truncate(describe_steps(buffer)))
         for src_id, edge_label in current:
             builder.add_edge(src_id, node_id, edge_label)
         current = [(node_id, "")]

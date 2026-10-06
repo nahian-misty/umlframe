@@ -8,12 +8,18 @@ from javalang.tokenizer import LexerError
 from javalang.tree import (
     ClassCreator,
     ClassDeclaration,
+    InterfaceDeclaration,
+    LocalVariableDeclaration,
     MemberReference,
+    MethodInvocation,
+    This,
 )
 
+from backend.reverse.phrasing import describe_steps
 from backend.schemas.activity import ActivityDocument, ActivityEdge, ActivityNode, ActivityNodeType
 from backend.schemas.uml import (
     Attribute,
+    ClassKind,
     Method,
     Multiplicity,
     Parameter,
@@ -45,6 +51,9 @@ _SCALAR_NEUTRAL_MAP = {"boolean": "bool"}
 _MANY_CONTAINERS = {"List", "Set", "ArrayList", "HashSet"}
 
 
+_COLLECTION_ADDERS = {"add", "addLast", "addFirst"}
+
+
 @dataclass
 class _RelEdge:
     source_id: str
@@ -70,11 +79,11 @@ def parse(source: str) -> UmlDocument:
     except (javalang.parser.JavaParserBaseException, LexerError) as exc:
         raise ValueError(f"Invalid Java source: {exc}") from exc
 
-    # Only top-level classes -- interfaces/enums/annotations have no UML
+    # Only top-level classes and interfaces -- enums/annotations have no UML
     # equivalent in this schema and are discarded cleanly, and nested classes
     # (declared inside another type's body) are not visited since we only walk
     # tree.types, the compilation unit's direct children.
-    class_defs = [t for t in tree.types if isinstance(t, ClassDeclaration)]
+    class_defs = [t for t in tree.types if isinstance(t, (ClassDeclaration, InterfaceDeclaration))]
     class_ids = {node.name: f"class_{i}" for i, node in enumerate(class_defs, start=1)}
     known_classes = set(class_ids)
 
@@ -94,7 +103,7 @@ def parse(source: str) -> UmlDocument:
 
 
 def _build_class(
-    node: ClassDeclaration,
+    node: ClassDeclaration | InterfaceDeclaration,
     class_id: str,
     index: int,
     known_classes: set[str],
@@ -102,6 +111,7 @@ def _build_class(
 ) -> tuple[UmlClass, list[_RelEdge]]:
     attrs, rel_info = _fields(node, known_classes)
     _upgrade_composition(node, rel_info)
+    _upgrade_collection_composition(node, rel_info)
 
     edges: list[_RelEdge] = []
     owned_targets: set[str] = set()
@@ -109,27 +119,47 @@ def _build_class(
         if info.target_class == node.name:
             continue  # self-reference, not a UML relationship
         owned_targets.add(info.target_class)
-        rel_type = RelationshipType.COMPOSITION if info.origin == "instantiation" else RelationshipType.AGGREGATION
+        rel_type = _attribute_relationship_type(info)
         edges.append(_RelEdge(class_id, class_ids[info.target_class], rel_type, info.many))
 
     methods: list[Method] = []
     for m in node.methods:
         methods.append(_build_method(m))
-        edges.extend(_association_edges(m, class_id, node.name, known_classes, class_ids, owned_targets))
+        edges.extend(_dependency_edges(m, class_id, node.name, known_classes, class_ids, owned_targets))
 
-    if node.extends is not None and node.extends.name in known_classes and node.extends.name != node.name:
-        edges.append(_RelEdge(class_id, class_ids[node.extends.name], RelationshipType.INHERITANCE, many=False))
+    for parent, edge_type in _parent_edges(node):
+        if parent in known_classes and parent != node.name:
+            edges.append(_RelEdge(class_id, class_ids[parent], edge_type, many=False))
 
     position, size = _layout(index)
     uml_class = UmlClass(
         id=class_id,
         name=node.name,
+        kind=_class_kind(node),
         attributes=attrs,
         methods=methods,
         position=position,
         size=size,
     )
     return uml_class, edges
+
+
+def _class_kind(node: ClassDeclaration | InterfaceDeclaration) -> ClassKind:
+    if isinstance(node, InterfaceDeclaration):
+        return ClassKind.INTERFACE
+    return ClassKind.ABSTRACT if "abstract" in node.modifiers else ClassKind.CLASS
+
+
+def _parent_edges(
+    node: ClassDeclaration | InterfaceDeclaration,
+) -> list[tuple[str, RelationshipType]]:
+    """What the type extends or implements, with the edge type for each: INHERITANCE
+    for a superclass (or an interface extending interfaces), REALIZATION for the
+    interfaces a class implements."""
+    if isinstance(node, InterfaceDeclaration):
+        return [(ref.name, RelationshipType.INHERITANCE) for ref in node.extends or []]
+    parents = [(node.extends.name, RelationshipType.INHERITANCE)] if node.extends is not None else []
+    return parents + [(ref.name, RelationshipType.REALIZATION) for ref in node.implements or []]
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +173,10 @@ def _fields(
     """Java requires every instance field to be declared at the class level
     (unlike Python, there's no implicit `self.x = ...` field creation), so
     every attribute -- and its relationship-inference baseline -- comes from
-    field declarations alone. A field whose declared type is a single known
-    class is provisionally AGGREGATION; `_upgrade_composition` below promotes
-    it to COMPOSITION when a constructor demonstrably instantiates it."""
+    field declarations alone. A field whose declared type is a known class is
+    provisionally an ASSOCIATION (AGGREGATION when it is a collection);
+    a field initializer or `_upgrade_composition` below promotes it to
+    COMPOSITION when the owner demonstrably instantiates it."""
     attrs: list[Attribute] = []
     rel_info: dict[str, _AttrRelInfo] = {}
 
@@ -166,14 +197,26 @@ def _fields(
             refs = _extract_class_refs(field.type, known_classes)
             if len(refs) == 1:
                 (target,) = refs
-                rel_info[declarator.name] = _AttrRelInfo(target, "annotated-only", _is_many(datatype))
+                created = isinstance(declarator.initializer, ClassCreator) and (
+                    declarator.initializer.type.name == target
+                )
+                origin = "instantiation" if created else "annotated-only"
+                rel_info[declarator.name] = _AttrRelInfo(target, origin, _is_many(datatype))
 
     return attrs, rel_info
 
 
+def _attribute_relationship_type(info: _AttrRelInfo) -> RelationshipType:
+    """Created by the owner -> composition; a held collection -> aggregation; a held
+    single reference (not created here) is a plain association."""
+    if info.origin == "instantiation":
+        return RelationshipType.COMPOSITION
+    return RelationshipType.AGGREGATION if info.many else RelationshipType.ASSOCIATION
+
+
 def _upgrade_composition(node: ClassDeclaration, rel_info: dict[str, _AttrRelInfo]) -> None:
     """Scans the first constructor's top-level body for `this.field = new X()`
-    and promotes that field's relationship from the annotation-only aggregation
+    and promotes that field's relationship from the annotation-only
     baseline to composition. Only looks at statements directly in the
     constructor body -- not one level into if/for/while/try the way the Python
     parser does -- to keep the Java parser's scope simple."""
@@ -186,6 +229,54 @@ def _upgrade_composition(node: ClassDeclaration, rel_info: dict[str, _AttrRelInf
         info = rel_info[name]
         if value.type.name == info.target_class:
             rel_info[name] = _AttrRelInfo(info.target_class, "instantiation", info.many)
+
+
+def _upgrade_collection_composition(
+    node: ClassDeclaration, rel_info: dict[str, _AttrRelInfo]
+) -> None:
+    """`items.add(new X())` or `X x = new X(); items.add(x)` in any method means the owner
+    creates what its collection field holds -> composition."""
+    for method in node.methods:
+        created = _locals_created_from_new(method)
+        for _, call in method.filter(MethodInvocation):
+            field = _collection_field(call, method)
+            if field is None or field not in rel_info or len(call.arguments) != 1:
+                continue
+            info = rel_info[field]
+            if info.origin == "instantiation" or not info.many:
+                continue
+            argument = call.arguments[0]
+            created_type = (
+                argument.type.name
+                if isinstance(argument, ClassCreator)
+                else created.get(argument.member) if isinstance(argument, MemberReference) else None
+            )
+            if created_type == info.target_class:
+                rel_info[field] = _AttrRelInfo(info.target_class, "instantiation", info.many)
+
+
+def _locals_created_from_new(method: Any) -> dict[str, str]:
+    """`X x = new X(...)` declarations in a method, as variable name -> class name."""
+    created: dict[str, str] = {}
+    for _, decl in method.filter(LocalVariableDeclaration):
+        for declarator in decl.declarators:
+            if isinstance(declarator.initializer, ClassCreator):
+                created[declarator.name] = declarator.initializer.type.name
+    return created
+
+
+def _collection_field(call: MethodInvocation, method: Any) -> str | None:
+    """The field name in `field.add(...)` / `this.field.add(...)`, else None."""
+    if call.member not in _COLLECTION_ADDERS:
+        return None
+    if call.qualifier:
+        return str(call.qualifier)
+    for _, this in method.filter(This):
+        selectors = this.selectors or []
+        for first, second in zip(selectors, selectors[1:], strict=False):
+            if second is call and isinstance(first, MemberReference):
+                return str(first.member)
+    return None
 
 
 def _this_assignment_parts(stmt: Any) -> tuple[str | None, Any]:
@@ -235,7 +326,7 @@ def _build_method(node: Any) -> Method:
 # ---------------------------------------------------------------------------
 
 
-def _association_edges(
+def _dependency_edges(
     node: Any,
     class_id: str,
     class_name: str,
@@ -249,10 +340,10 @@ def _association_edges(
     if node.return_type is not None:
         referenced |= _extract_class_refs(node.return_type, known_classes)
     referenced.discard(class_name)
-    referenced -= owned_targets  # "uses but doesn't own" -- complement of aggregation/composition
+    referenced -= owned_targets  # already held as a field: a stronger relationship exists
 
     return [
-        _RelEdge(class_id, class_ids[target], RelationshipType.ASSOCIATION, many=False)
+        _RelEdge(class_id, class_ids[target], RelationshipType.DEPENDENCY, many=False)
         for target in sorted(referenced)
     ]
 
@@ -438,7 +529,7 @@ def _walk_block(stmts: list[Any], entry: _OpenTails, builder: _CfgBuilder, end_i
         nonlocal current, buffer
         if not buffer:
             return
-        node_id = builder.add_node(ActivityNodeType.ACTION, _truncate("; ".join(buffer)))
+        node_id = builder.add_node(ActivityNodeType.ACTION, _truncate(describe_steps(buffer)))
         for src_id, edge_label in current:
             builder.add_edge(src_id, node_id, edge_label)
         current = [(node_id, "")]

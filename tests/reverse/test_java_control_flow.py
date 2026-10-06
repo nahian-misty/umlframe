@@ -31,7 +31,7 @@ public class Calc {
     doc = extract_control_flow(source, "Calc", "run")
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 1
-    assert actions[0].label == "int y = x + 1; int z = y * 2; return z"
+    assert actions[0].label == "Calculate y; Calculate z; Return z"
     start = _nodes_by_type(doc, ActivityNodeType.START)[0]
     end = _nodes_by_type(doc, ActivityNodeType.END)[0]
     assert _edge(doc, start.id, actions[0].id)
@@ -77,8 +77,8 @@ public class Calc {
     decision = _nodes_by_type(doc, ActivityNodeType.DECISION)[0]
     actions = _nodes_by_type(doc, ActivityNodeType.ACTION)
     assert len(actions) == 2
-    doubling = next(a for a in actions if "x * 2" in a.label)
-    returning = next(a for a in actions if a.label == "return x")
+    doubling = next(a for a in actions if a.label == "Calculate x")
+    returning = next(a for a in actions if a.label == "Return x")
 
     yes_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "yes")
     no_edge = next(e for e in doc.edges if e.source == decision.id and e.label == "no")
@@ -138,10 +138,10 @@ public class Calc {
     doc = extract_control_flow(source, "Calc", "safeDiv")
     assert _flow(doc) == {
         ("start", "", "catch ArithmeticException?"),
-        ("catch ArithmeticException?", "yes", "return 0"),
-        ("catch ArithmeticException?", "no", "return a / b"),
-        ("return 0", "", "end"),
-        ("return a / b", "", "end"),
+        ("catch ArithmeticException?", "yes", "Return 0"),
+        ("catch ArithmeticException?", "no", "Return result"),
+        ("Return 0", "", "end"),
+        ("Return result", "", "end"),
     }
 
 
@@ -160,17 +160,17 @@ class S {
     assert _flow(extract_control_flow(source, "S", "f")) == {
         ("start", "", "exception thrown?"),
         ("exception thrown?", "yes", "catch IOException?"),
-        ("exception thrown?", "no", "a()"),
-        ("catch IOException?", "yes", "b()"),
+        ("exception thrown?", "no", "A"),
+        ("catch IOException?", "yes", "B"),
         ("catch IOException?", "no", "catch RuntimeException?"),
-        ("catch RuntimeException?", "yes", "c()"),
+        ("catch RuntimeException?", "yes", "C"),
         ("catch RuntimeException?", "no", "finally"),
-        ("a()", "", "finally"),
-        ("b()", "", "finally"),
-        ("c()", "", "finally"),
-        ("finally", "", "d()"),
-        ("d()", "", "e()"),
-        ("e()", "", "end"),
+        ("A", "", "finally"),
+        ("B", "", "finally"),
+        ("C", "", "finally"),
+        ("finally", "", "D"),
+        ("D", "", "E"),
+        ("E", "", "end"),
     }
 
 
