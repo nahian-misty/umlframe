@@ -25,7 +25,7 @@ _LABELLED_KINDS = frozenset({"action", "decision"})
 # the line crossing the window is not read as stray characters.
 _CONNECTOR_BLANK_THICKNESS = 5
 # A guard is one short word ("yes"/"no"): single-word page segmentation.
-_GUARD_TESS_CONFIG = "--oem 3 --psm 8 --dpi 300"
+_GUARD_TESS_CONFIG = "--oem 3 --psm 7 --dpi 300"
 
 # Grey levels below which a pixel counts as text ink.
 _GUARD_DARK_INK_LEVEL = 80
@@ -35,10 +35,16 @@ _GUARD_MAX_DISTANCE = 70
 _GUARD_MIN_GLYPH_AREA = 6
 _GUARD_PAD = 8
 _GLYPH_HALO = 4
+_GUARD_LINE_THICKNESS = 3
+_GUARD_LINE_MIN_LENGTH = 8
 _WHITE = 255
+# A crop whose darkest and lightest pixels differ by less than this holds no text.
+_MIN_TEXT_CONTRAST = 50
+# The background is most of a label's crop; below this share of white, the polarity is flipped.
+_MIN_BACKGROUND_SHARE = 0.5
 _MASK_EXTRA_PX = 6
 # Arrowheads sit just outside the node an edge points at; clear this much around it.
-_ARROWHEAD_CLEARANCE = 36
+_ARROWHEAD_CLEARANCE = 28
 # The detected connector stops where node bounding boxes were erased; the real line
 # continues this far on, up to the node's actual outline.
 _CONNECTOR_EXTENSION = 80
@@ -47,6 +53,14 @@ _CONNECTOR_EXTENSION = 80
 # extents (a*fx, b*fy) sits inside the diamond while fx + fy <= 1.
 _DIAMOND_LABEL_WIDTH = 0.64
 _DIAMOND_LABEL_HEIGHT = 0.30
+# Fraction of an outlined box's own interior read for its label: the centre, clear of the
+# rounded corners and of any outline thickness the interior contour sits against.
+_BOX_LABEL_WIDTH = 0.88
+_BOX_LABEL_HEIGHT = 0.72
+# An ellipse's interior narrows toward its ends, so less of it is safe to read.
+_ELLIPSE_LABEL_WIDTH = 0.70
+_ELLIPSE_LABEL_HEIGHT = 0.60
+_ELLIPSE_MAX_EXTENT = 0.85
 
 
 def extract_activity_labels(gray: GrayImage, shapes: list[ActivityShape]) -> list[str]:
@@ -75,6 +89,13 @@ def _label_region(shape: ActivityShape) -> tuple[int, int, int, int]:
         cx, cy = shape.x + shape.w / 2, shape.y + shape.h / 2
         iw, ih = shape.w * _DIAMOND_LABEL_WIDTH, shape.h * _DIAMOND_LABEL_HEIGHT
         return (int(cx - iw / 2), int(cy - ih / 2), int(iw), int(ih))
+    if shape.interior is not None:
+        ix, iy, iw, ih = cv2.boundingRect(shape.interior)
+        extent = cv2.contourArea(shape.interior) / (iw * ih) if iw * ih else 1.0
+        narrow = extent < _ELLIPSE_MAX_EXTENT
+        lw = iw * (_ELLIPSE_LABEL_WIDTH if narrow else _BOX_LABEL_WIDTH)
+        lh = ih * (_ELLIPSE_LABEL_HEIGHT if narrow else _BOX_LABEL_HEIGHT)
+        return (int(ix + (iw - lw) / 2), int(iy + (ih - lh) / 2), int(lw), int(lh))
     return _inset((shape.x, shape.y, shape.w, shape.h))
 
 
@@ -107,6 +128,11 @@ def extract_edge_guard_candidates(
     text = _read_ink_near(cleaned, _GUARD_DARK_INK_LEVEL, connector)
     if text:
         candidates.append(text)
+    # A label drawn into a gap in the line is read as it stands: blanking the line
+    # would also wipe the letters sitting on it.
+    text = _read_ink_near(cleaned, _GUARD_ANY_INK_LEVEL, connector)
+    if text:
+        candidates.append(text)
     start, end = _extended_ends(connector)
     cv2.line(cleaned, start, end, _WHITE, _CONNECTOR_BLANK_THICKNESS)
     text = _read_ink_near(cleaned, _GUARD_ANY_INK_LEVEL, connector)
@@ -123,6 +149,8 @@ def _read_ink_near(cleaned: GrayImage, ink_level: int, connector: ActivityConnec
         x, y, w, h, area = (int(v) for v in stats[index])
         if area < _GUARD_MIN_GLYPH_AREA or max(w, h) > _GUARD_MAX_GLYPH_SIDE:
             continue
+        if _is_line_piece(w, h, connector):
+            continue
         if _distance_to_segment(x + w / 2, y + h / 2, connector) > _GUARD_MAX_DISTANCE:
             continue
         kept[labels == index] = 255
@@ -138,7 +166,17 @@ def _read_ink_near(cleaned: GrayImage, ink_level: int, connector: ActivityConnec
     )
     halo = cv2.dilate(kept, np.ones((2 * _GLYPH_HALO + 1, 2 * _GLYPH_HALO + 1), np.uint8))
     isolated = np.where(halo > 0, cleaned, _WHITE).astype(np.uint8)
-    return _ocr_region(isolated, region, _GUARD_TESS_CONFIG).strip()
+    # Tesseract reads a two- or three-letter word better from the grey levels than
+    # from a global threshold, which breaks thin letters apart at this size.
+    return _ocr_region(isolated, region, _GUARD_TESS_CONFIG, binarize=False).strip()
+
+
+def _is_line_piece(w: int, h: int, connector: ActivityConnector) -> bool:
+    """A thin sliver lying along the connector: a stub of the line left beside the
+    label, not a letter."""
+    horizontal = abs(connector.x2 - connector.x1) >= abs(connector.y2 - connector.y1)
+    length, thickness = (w, h) if horizontal else (h, w)
+    return thickness <= _GUARD_LINE_THICKNESS and length >= _GUARD_LINE_MIN_LENGTH
 
 
 def _distance_to_segment(px: float, py: float, c: ActivityConnector) -> float:
@@ -184,7 +222,10 @@ def _inset(region: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
 
 
 def _ocr_region(
-    gray: GrayImage, region: tuple[int, int, int, int], config: str = _TESS_CONFIG
+    gray: GrayImage,
+    region: tuple[int, int, int, int],
+    config: str = _TESS_CONFIG,
+    binarize: bool = True,
 ) -> str:
     x, y, w, h = region
     x = max(0, x)
@@ -195,11 +236,19 @@ def _ocr_region(
         return ""
 
     crop = gray[y : y + h, x : x + w]
-    padded = cv2.copyMakeBorder(crop, _PAD, _PAD, _PAD, _PAD, cv2.BORDER_CONSTANT, value=255)
+    # Pad with the crop's own background (a coloured fill is not white), so the border does
+    # not become a third grey level for the threshold to split.
+    background = int(np.median(crop))
+    padded = cv2.copyMakeBorder(
+        crop, _PAD, _PAD, _PAD, _PAD, cv2.BORDER_CONSTANT, value=background
+    )
 
     ph, pw = padded.shape[:2]
     scaled = cv2.resize(padded, (pw * _UPSCALE, ph * _UPSCALE), interpolation=cv2.INTER_CUBIC)
 
-    _, binary = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if binarize:
+        _, scaled = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        if (scaled == _WHITE).mean() < _MIN_BACKGROUND_SHARE:
+            scaled = cv2.bitwise_not(scaled)  # light text on a dark fill: make it dark on light
 
-    return str(pytesseract.image_to_string(binary, config=config))
+    return str(pytesseract.image_to_string(scaled, config=config))

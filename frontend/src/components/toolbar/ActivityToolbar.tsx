@@ -5,6 +5,7 @@ import { useActivityDiagramContext } from '../../context/ActivityDiagramContext'
 import { exportCanvasAsPng } from '../../utils/pngExport';
 import type { ActivityToolId } from '../../hooks/useActivityDiagram';
 import { Button } from '../common/Button';
+import { ActivityImageUploadButton } from './ActivityImageUploadButton';
 import { ClearDiagramButton } from './ClearDiagramButton';
 import { FitToContentButton } from './FitToContentButton';
 import { UndoRedoButtons } from './UndoRedoButtons';
@@ -126,6 +127,7 @@ export function ActivityToolbar({ children }: ActivityToolbarProps) {
             Snap
           </Button>
         </div>
+        <ActivityImageUploadButton />
         <Button
           size="sm"
           icon={Download}
