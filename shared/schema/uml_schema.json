@@ -21,9 +21,14 @@
       "type": "string",
       "enum": ["public", "private", "protected", "package"]
     },
+    "ClassKind": {
+      "type": "string",
+      "enum": ["class", "interface", "abstract"],
+      "description": "Shown above the class name: «interface» or «abstract», or nothing for a plain class"
+    },
     "RelationshipType": {
       "type": "string",
-      "enum": ["association", "aggregation", "composition", "inheritance", "dependency"]
+      "enum": ["association", "aggregation", "composition", "inheritance", "dependency", "realization"]
     },
     "Parameter": {
       "type": "object",
@@ -93,6 +98,7 @@
           "description": "Unique class identifier, e.g. class_1"
         },
         "name": { "type": "string", "minLength": 1 },
+        "kind": { "$ref": "#/definitions/ClassKind", "default": "class" },
         "attributes": {
           "type": "array",
           "items": { "$ref": "#/definitions/Attribute" }

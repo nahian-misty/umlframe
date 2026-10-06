@@ -9,6 +9,7 @@ TYPE_MAP: dict[str, str] = {
     "Float": "Float",
     "double": "double",
     "Double": "Double",
+    "boolean": "boolean",
     "bool": "boolean",
     "Boolean": "Boolean",
     "void": "void",
@@ -52,3 +53,6 @@ VISIBILITY_PREFIX: dict[str, str] = {
 
 FILE_EXTENSION = ".java"
 TEMPLATE_DIR = "java"
+
+# Body printed for a method nobody has implemented (also used for abstract methods).
+STUB_BODY_LINES: list[str] = ['throw new UnsupportedOperationException("Not implemented");']

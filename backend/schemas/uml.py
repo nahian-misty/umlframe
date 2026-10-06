@@ -12,11 +12,18 @@ class Visibility(str, Enum):
     PACKAGE = "package"
 
 
+class ClassKind(str, Enum):
+    CLASS = "class"
+    INTERFACE = "interface"
+    ABSTRACT = "abstract"
+
+
 class RelationshipType(str, Enum):
     ASSOCIATION = "association"
     AGGREGATION = "aggregation"
     COMPOSITION = "composition"
     INHERITANCE = "inheritance"
+    REALIZATION = "realization"
     DEPENDENCY = "dependency"
 
 
@@ -56,6 +63,7 @@ class Size(BaseModel):
 class UmlClass(BaseModel):
     id: str
     name: str
+    kind: ClassKind = ClassKind.CLASS
     attributes: list[Attribute] = []
     methods: list[Method] = []
     position: Position

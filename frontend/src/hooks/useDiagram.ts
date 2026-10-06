@@ -75,6 +75,7 @@ export function useDiagram(): UseDiagramResult {
       const newClass: UmlClassState = {
         id,
         name: `NewClass${id.replace('class_', '')}`,
+        kind: 'class',
         attributes: [],
         methods: [],
         position,

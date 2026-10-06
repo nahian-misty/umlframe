@@ -57,6 +57,7 @@ export function classToWire(c: UmlClassState): UmlClass {
   return {
     id: c.id,
     name: c.name,
+    kind: c.kind,
     attributes: c.attributes.map(attributeToWire),
     methods: c.methods.map(methodToWire),
     position: c.position,
@@ -68,6 +69,7 @@ export function classFromWire(c: UmlClass): UmlClassState {
   return {
     id: c.id,
     name: c.name,
+    kind: c.kind ?? 'class',
     attributes: c.attributes.map((a, i) => attributeFromWire(a, `${c.id}_attr_${i}`)),
     methods: c.methods.map((m, i) => methodFromWire(m, `${c.id}_method_${i}`)),
     position: c.position,

@@ -13,7 +13,19 @@ from .{{ imp }} import {{ imp }}
 {% endif %}
 
 
-class {{ class_name }}{% if parent %}({{ parent }}){% elif has_abstract %}(ABC){% endif %}:
+class {{ class_name }}{% if bases %}({{ bases | join(', ') }}){% elif has_abstract %}(ABC){% endif %}:
+{% if is_interface %}
+{% for method in methods %}
+    @abstractmethod
+    def {{ method.name }}({% if not method.static %}self{% if method.params %}, {% endif %}{% endif %}{{ method.params | join(', ') }}) -> {{ method.return_type }}:
+{% for line in method.body_lines %}
+{{ ('        ' ~ line) if line.strip() else '' }}
+{% endfor %}
+
+{% else %}
+    pass
+{% endfor %}
+{% else %}
 {% for attr in static_attributes %}
     {{ attr.prefixed_name }}: {{ attr.type }}{% if attr.default_value %} = {{ attr.default_value }}{% endif %}
 
@@ -39,6 +51,9 @@ class {{ class_name }}{% if parent %}({{ parent }}){% elif has_abstract %}(ABC){
     @abstractmethod
 {% endif %}
     def {{ method.name }}({% if not method.static %}self{% if method.params %}, {% endif %}{% endif %}{{ method.params | join(', ') }}) -> {{ method.return_type }}:
-        ...
+{% for line in method.body_lines %}
+{{ ('        ' ~ line) if line.strip() else '' }}
+{% endfor %}
 
 {% endfor %}
+{% endif %}

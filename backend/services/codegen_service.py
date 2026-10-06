@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import textwrap
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import jinja2
 
 from backend.generator import registry as reg
+from backend.generator.class_description import (
+    AttributeDescription,
+    ClassDescription,
+    CollaboratorDescription,
+    MethodDescription,
+)
 from backend.generator.registry import LanguageConfig
-from backend.schemas.uml import Attribute, Method, RelationshipType, UmlClass, UmlDocument
+from backend.schemas.uml import (
+    Attribute,
+    ClassKind,
+    Method,
+    RelationshipType,
+    UmlClass,
+    UmlDocument,
+)
 
 TEMPLATES_ROOT = Path(__file__).parent.parent / "generator" / "templates"
 
@@ -37,6 +52,7 @@ class MethodContext:
     static: bool
     abstract: bool
     visibility_keyword: str
+    body_lines: list[str]
 
 
 @dataclass
@@ -81,7 +97,29 @@ def _build_attr_context(attr: Attribute, config: LanguageConfig, class_names: se
     )
 
 
-def _build_method_context(method: Method, config: LanguageConfig, lang: str) -> MethodContext:
+TAB_AS_SPACES = "    "
+MAX_COLLABORATOR_METHODS = 10
+
+
+def _normalize_body_lines(body: str | None) -> list[str] | None:
+    """A supplied method body as clean, unindented lines, or None when it has no content."""
+    if body is None:
+        return None
+    lines = [line.rstrip() for line in textwrap.dedent(body.replace("\t", TAB_AS_SPACES)).split("\n")]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines or None
+
+
+def _build_method_context(
+    method: Method,
+    config: LanguageConfig,
+    lang: str,
+    body: str | None = None,
+    force_abstract: bool = False,
+) -> MethodContext:
     mapped_return = _map_type(method.return_type, config.type_map)
     keyword = config.visibility_keyword.get(method.visibility.value, "")
 
@@ -96,14 +134,17 @@ def _build_method_context(method: Method, config: LanguageConfig, lang: str) -> 
             params.append(p.name)
 
     prefix = config.visibility_prefix.get(method.visibility.value, "")
+    abstract = method.abstract or force_abstract
+    supplied = None if abstract else _normalize_body_lines(body)
     return MethodContext(
         name=method.name,
         prefixed_name=prefix + method.name,
         return_type=mapped_return,
         params=params,
         static=method.static,
-        abstract=method.abstract,
+        abstract=abstract,
         visibility_keyword=keyword,
+        body_lines=supplied if supplied is not None else list(config.stub_body_lines),
     )
 
 
@@ -135,9 +176,7 @@ def _collect_stdlib_imports(
             mapped = _map_type(t, config.type_map)
             if mapped == "UUID":
                 needed.add("uuid")
-            elif mapped == "date":
-                needed.add("datetime")
-            elif mapped == "datetime":
+            elif mapped == "date" or mapped == "datetime":
                 needed.add("datetime")
         result = []
         for mod in needed:
@@ -164,13 +203,63 @@ def _collect_stdlib_imports(
     return []
 
 
-def _find_parent(cls: UmlClass, document: UmlDocument, class_map: dict[str, UmlClass]) -> str | None:
+# Both mean "is a kind of" to generated code: `extends`, or `implements` for an interface.
+_SUBTYPE_EDGES = (RelationshipType.INHERITANCE, RelationshipType.REALIZATION)
+
+
+def _find_parents(
+    cls: UmlClass, document: UmlDocument, class_map: dict[str, UmlClass]
+) -> tuple[str | None, list[str]]:
+    """(parent class, interfaces) from the INHERITANCE edges leaving `cls`.
+
+    An edge to an interface is an implementation (or, from an interface, an
+    extension), so only the first edge to a non-interface becomes the parent class;
+    an interface has no parent class at all, only the interfaces it extends."""
+    parent: str | None = None
+    interfaces: list[str] = []
     for rel in document.relationships:
-        if rel.type == RelationshipType.INHERITANCE and rel.source == cls.id:
-            parent_cls = class_map.get(rel.destination)
-            if parent_cls:
-                return parent_cls.name
-    return None
+        if rel.type not in _SUBTYPE_EDGES or rel.source != cls.id:
+            continue
+        target = class_map.get(rel.destination)
+        if target is None:
+            continue
+        if target.kind == ClassKind.INTERFACE or cls.kind == ClassKind.INTERFACE:
+            interfaces.append(target.name)
+        elif parent is None:
+            parent = target.name
+    return parent, interfaces
+
+
+def _inherited_obligations(
+    cls: UmlClass, document: UmlDocument, class_map: dict[str, UmlClass]
+) -> list[Method]:
+    """Methods `cls` must define but does not: every method of an interface it
+    implements and every abstract method of an abstract parent, up the chain,
+    unless it declares one of that name itself (an abstract class may leave them)."""
+    if cls.kind == ClassKind.ABSTRACT:
+        return []
+    have = {m.name for m in cls.methods}
+    missing: list[Method] = []
+    seen: set[str] = set()
+    pending = [cls]
+    while pending:
+        current = pending.pop()
+        for rel in document.relationships:
+            if rel.type not in _SUBTYPE_EDGES or rel.source != current.id:
+                continue
+            target = class_map.get(rel.destination)
+            if target is None or target.id in seen:
+                continue
+            seen.add(target.id)
+            promised = [
+                m for m in target.methods if target.kind == ClassKind.INTERFACE or m.abstract
+            ]
+            for method in promised:
+                if method.name not in have:
+                    have.add(method.name)
+                    missing.append(method.model_copy(update={"abstract": False}))
+            pending.append(target)
+    return missing
 
 
 _RELATIONSHIP_FIELD_TYPES = (RelationshipType.AGGREGATION, RelationshipType.COMPOSITION)
@@ -245,10 +334,12 @@ def _build_template_context(
     class_map: dict[str, UmlClass],
     config: LanguageConfig,
     lang: str,
+    bodies: Mapping[int, str] | None = None,
 ) -> dict:
     class_names = {c.name for c in document.classes}
-    parent = _find_parent(cls, document, class_map)
-    has_abstract = any(m.abstract for m in cls.methods)
+    parent, interfaces = _find_parents(cls, document, class_map)
+    is_interface = cls.kind == ClassKind.INTERFACE
+    has_abstract = is_interface or cls.kind == ClassKind.ABSTRACT or any(m.abstract for m in cls.methods)
 
     attrs = [_build_attr_context(a, config, class_names) for a in cls.attributes]
     existing_attr_names = {a.name for a in attrs}
@@ -266,9 +357,31 @@ def _build_template_context(
 
     static_attributes = [a for a in attrs if a.static]
     instance_attributes = [a for a in attrs if not a.static]
-    methods = [_build_method_context(m, config, lang) for m in cls.methods]
+    bodies = bodies or {}
+    methods = [
+        _build_method_context(m, config, lang, bodies.get(index), force_abstract=is_interface)
+        for index, m in enumerate(cls.methods)
+    ]
+    if cls.kind != ClassKind.INTERFACE:
+        # A concrete class must define what its interfaces and abstract parents promise.
+        methods += [
+            _build_method_context(m, config, lang, force_abstract=cls.kind == ClassKind.ABSTRACT)
+            for m in _inherited_obligations(cls, document, class_map)
+        ]
 
-    class_imports = sorted(_collect_class_imports(cls, config, class_names) | relationship_class_names)
+    # Java resolves a same-package base type without an import; JavaScript has no
+    # interfaces to inherit from, so only its parent class is imported.
+    inherited_class_names: set[str] = set()
+    if lang != "java":
+        inherited_class_names = {parent} if parent else set()
+    if lang == "python":
+        inherited_class_names |= set(interfaces)
+    # Generated Java files share one (default) package, where `import Foo;` is an error.
+    class_imports = [] if lang == "java" else sorted(
+        _collect_class_imports(cls, config, class_names)
+        | relationship_class_names
+        | inherited_class_names
+    )
     stdlib_imports = _collect_stdlib_imports(cls, config, lang)
     if lang == "java" and any(f.many for f in relationship_fields):
         stdlib_imports = sorted(set(stdlib_imports) | {"java.util.List", "java.util.ArrayList"})
@@ -276,6 +389,10 @@ def _build_template_context(
     return {
         "class_name": cls.name,
         "parent": parent,
+        "interfaces": interfaces,
+        "bases": ([parent] if parent else []) + interfaces,
+        "is_interface": is_interface,
+        "forbid_instantiation": is_interface or cls.kind == ClassKind.ABSTRACT,
         "has_abstract": has_abstract,
         "attributes": attrs,
         "static_attributes": static_attributes,
@@ -292,7 +409,17 @@ def _build_template_context(
 # ---------------------------------------------------------------------------
 
 
-def generate_code(document: UmlDocument, language: str) -> dict[str, str]:
+def generate_code(
+    document: UmlDocument,
+    language: str,
+    implementations: Mapping[tuple[str, int], str] | None = None,
+    class_ids: set[str] | None = None,
+) -> dict[str, str]:
+    """Render one source file per class.
+
+    `implementations` optionally maps (class id, index in that class's methods) to a method
+    body; a method without one keeps the language's stub. `class_ids` restricts the output to
+    those classes (used to check a single class on its own)."""
     if language not in reg.REGISTRY:
         raise ValueError(f"Unsupported language: '{language}'. Supported: {reg.SUPPORTED_LANGUAGES}")
 
@@ -309,9 +436,131 @@ def generate_code(document: UmlDocument, language: str) -> dict[str, str]:
     files: dict[str, str] = {}
 
     for cls in document.classes:
-        context = _build_template_context(cls, document, class_map, config, language)
+        if class_ids is not None and cls.id not in class_ids:
+            continue
+        bodies = {
+            index: body for (cid, index), body in (implementations or {}).items() if cid == cls.id
+        }
+        context = _build_template_context(cls, document, class_map, config, language, bodies)
         content = template.render(**context)
         filename = cls.name + config.file_extension
         files[filename] = content
 
     return files
+
+
+# ---------------------------------------------------------------------------
+# Class descriptions (input for the optional LLM method implementation)
+# ---------------------------------------------------------------------------
+
+
+def _member_access(language: str, class_name: str, name: str, static: bool) -> str:
+    owner = class_name if static else ("self" if language == "python" else "this")
+    return f"{owner}.{name}"
+
+
+def _method_signature(method: MethodContext, language: str) -> str:
+    params = ", ".join(method.params)
+    if language == "python":
+        self_part = [] if method.static else ["self"]
+        return f"def {method.prefixed_name}({', '.join(self_part + method.params)}) -> {method.return_type}"
+    if language == "java":
+        modifiers = " ".join(
+            part for part in (method.visibility_keyword, "static" if method.static else "") if part
+        )
+        return f"{modifiers} {method.return_type} {method.name}({params})".strip()
+    return f"{'static ' if method.static else ''}{method.prefixed_name}({params})"
+
+
+def _method_keys(methods: list[Method], class_name: str) -> list[str]:
+    seen: dict[str, int] = {}
+    keys: list[str] = []
+    for method in methods:
+        seen[method.name] = seen.get(method.name, 0) + 1
+        suffix = "" if seen[method.name] == 1 else f"#{seen[method.name]}"
+        keys.append(f"{class_name}.{method.name}{suffix}")
+    return keys
+
+
+def _collaborators(
+    cls: UmlClass,
+    document: UmlDocument,
+    class_map: dict[str, UmlClass],
+    config: LanguageConfig,
+    language: str,
+) -> list[CollaboratorDescription]:
+    collaborators: list[CollaboratorDescription] = []
+    for rel in document.relationships:
+        if rel.source == cls.id:
+            other, role = class_map[rel.destination], "this class uses, owns or extends it"
+        elif rel.destination == cls.id:
+            other, role = class_map[rel.source], "it uses, owns or extends this class"
+        else:
+            continue
+        public_methods = [
+            _method_signature(_build_method_context(m, config, language), language)
+            for m in other.methods
+            if m.visibility.value == "public"
+        ][:MAX_COLLABORATOR_METHODS]
+        collaborators.append(
+            CollaboratorDescription(
+                kind=rel.type.value, role=role, class_name=other.name, methods=public_methods
+            )
+        )
+    return collaborators
+
+
+def describe_class(document: UmlDocument, class_id: str, language: str) -> ClassDescription:
+    """Describe a class the way its generated scaffold names things, for a model that will
+    write method bodies (signatures, how to reach attributes and sibling methods, collaborators)."""
+    if language not in reg.REGISTRY:
+        raise ValueError(f"Unsupported language: '{language}'. Supported: {reg.SUPPORTED_LANGUAGES}")
+    class_map = {c.id: c for c in document.classes}
+    if class_id not in class_map:
+        raise ValueError(f"Class '{class_id}' not found")
+    cls = class_map[class_id]
+    config = reg.REGISTRY[language]
+
+    context = _build_template_context(cls, document, class_map, config, language)
+    attributes = [
+        AttributeDescription(
+            name=attr.name,
+            type=attr.type,
+            access=_member_access(
+                language,
+                cls.name,
+                attr.name if language == "java" else attr.prefixed_name,
+                attr.static,
+            ),
+            static=attr.static,
+            final=attr.final,
+        )
+        for attr in context["attributes"]
+    ]
+    keys = _method_keys(cls.methods, cls.name)
+    methods = [
+        MethodDescription(
+            index=index,
+            key=keys[index],
+            name=method.name,
+            signature=_method_signature(method, language),
+            access=_member_access(
+                language,
+                cls.name,
+                method.name if language == "java" else method.prefixed_name,
+                method.static,
+            ),
+            return_type=method.return_type,
+            static=method.static,
+            abstract=method.abstract,
+        )
+        for index, method in enumerate(context["methods"])
+    ]
+    return ClassDescription(
+        class_name=cls.name,
+        language=language,
+        parent=context["parent"],
+        attributes=attributes,
+        methods=methods,
+        collaborators=_collaborators(cls, document, class_map, config, language),
+    )

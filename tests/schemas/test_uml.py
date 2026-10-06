@@ -15,7 +15,6 @@ from backend.schemas.uml import (
     Visibility,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -178,3 +177,53 @@ def test_document_allows_self_referential_relationship():
     rel = make_relationship(source="class_1", destination="class_1")
     doc = UmlDocument(classes=[c1], relationships=[rel])
     assert doc.relationships[0].source == "class_1"
+
+
+# ---------------------------------------------------------------------------
+# Class kind (class / abstract / interface)
+# ---------------------------------------------------------------------------
+
+
+def test_class_kind_defaults_to_class():
+    assert make_class().kind.value == "class"
+
+
+@pytest.mark.parametrize("kind", ["class", "abstract", "interface"])
+def test_class_kind_accepts_each_value(kind):
+    cls = UmlClass.model_validate(
+        {
+            "id": "class_1",
+            "name": "Owner",
+            "kind": kind,
+            "position": {"x": 0, "y": 0},
+            "size": {"width": 1, "height": 1},
+        }
+    )
+    assert cls.kind.value == kind
+    assert cls.model_dump(mode="json")["kind"] == kind
+
+
+def test_class_kind_rejects_unknown_value():
+    with pytest.raises(ValidationError):
+        UmlClass.model_validate(
+            {
+                "id": "class_1",
+                "name": "Owner",
+                "kind": "enum",
+                "position": {"x": 0, "y": 0},
+                "size": {"width": 1, "height": 1},
+            }
+        )
+
+
+def test_json_schema_file_lists_the_same_kinds():
+    import json
+    from pathlib import Path
+
+    from backend.schemas.uml import ClassKind
+
+    schema = json.loads(
+        (Path(__file__).resolve().parents[2] / "shared" / "schema" / "uml_schema.json").read_text()
+    )
+    assert schema["definitions"]["ClassKind"]["enum"] == [k.value for k in ClassKind]
+    assert schema["definitions"]["UmlClass"]["properties"]["kind"]["default"] == "class"

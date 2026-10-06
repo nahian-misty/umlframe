@@ -16,6 +16,7 @@ class LanguageConfig:
     template_dir: str
     file_extension: str
     standard_imports: dict[str, str]
+    stub_body_lines: list[str]
 
 
 REGISTRY: dict[str, LanguageConfig] = {
@@ -26,6 +27,7 @@ REGISTRY: dict[str, LanguageConfig] = {
         template_dir=python.TEMPLATE_DIR,
         file_extension=python.FILE_EXTENSION,
         standard_imports={},
+        stub_body_lines=python.STUB_BODY_LINES,
     ),
     "java": LanguageConfig(
         type_map=java.TYPE_MAP,
@@ -34,6 +36,7 @@ REGISTRY: dict[str, LanguageConfig] = {
         template_dir=java.TEMPLATE_DIR,
         file_extension=java.FILE_EXTENSION,
         standard_imports=java.STANDARD_IMPORTS,
+        stub_body_lines=java.STUB_BODY_LINES,
     ),
     "javascript": LanguageConfig(
         type_map=javascript.TYPE_MAP,
@@ -42,6 +45,7 @@ REGISTRY: dict[str, LanguageConfig] = {
         template_dir=javascript.TEMPLATE_DIR,
         file_extension=javascript.FILE_EXTENSION,
         standard_imports={},
+        stub_body_lines=javascript.STUB_BODY_LINES,
     ),
 }
 

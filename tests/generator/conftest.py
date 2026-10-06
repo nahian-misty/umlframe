@@ -2,6 +2,7 @@ import pytest
 
 from backend.schemas.uml import (
     Attribute,
+    ClassKind,
     Method,
     Multiplicity,
     Parameter,
@@ -15,10 +16,11 @@ from backend.schemas.uml import (
 )
 
 
-def cls(id: str, name: str, attributes=None, methods=None) -> UmlClass:
+def cls(id: str, name: str, attributes=None, methods=None, kind=ClassKind.CLASS) -> UmlClass:
     return UmlClass(
         id=id,
         name=name,
+        kind=kind,
         attributes=attributes or [],
         methods=methods or [],
         position=Position(x=0, y=0),

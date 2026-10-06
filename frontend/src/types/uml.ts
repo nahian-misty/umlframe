@@ -5,8 +5,11 @@
 
 export type Visibility = 'public' | 'private' | 'protected' | 'package';
 
+/** Shown above a class name: «interface», «abstract», or nothing special for a class. */
+export type ClassKind = 'class' | 'interface' | 'abstract';
+
 export type RelationshipType =
-  'association' | 'aggregation' | 'composition' | 'inheritance' | 'dependency';
+  'association' | 'aggregation' | 'composition' | 'inheritance' | 'dependency' | 'realization';
 
 export interface Parameter {
   name: string;
@@ -44,6 +47,7 @@ export interface Size {
 export interface UmlClass {
   id: string;
   name: string;
+  kind: ClassKind;
   attributes: Attribute[];
   methods: Method[];
   position: Position;

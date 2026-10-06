@@ -14,7 +14,16 @@ import {{ imp }};
 {% endfor %}
 
 {% endif %}
-public {% if has_abstract %}abstract {% endif %}class {{ class_name }}{% if parent %} extends {{ parent }}{% endif %} {
+{% if is_interface %}
+public interface {{ class_name }}{% if interfaces %} extends {{ interfaces | join(', ') }}{% endif %} {
+
+{% for method in methods %}
+    {{ method.return_type }} {{ method.name }}({{ method.params | join(', ') }});
+
+{% endfor %}
+}
+{% else %}
+public {% if has_abstract %}abstract {% endif %}class {{ class_name }}{% if parent %} extends {{ parent }}{% endif %}{% if interfaces %} implements {{ interfaces | join(', ') }}{% endif %} {
 {% if attributes %}
 
 {% for attr in attributes %}
@@ -27,8 +36,11 @@ public {% if has_abstract %}abstract {% endif %}class {{ class_name }}{% if pare
 
 {% for method in methods %}
     {{ method.visibility_keyword }} {% if method.static %}static {% endif %}{% if method.abstract %}abstract {% endif %}{{ method.return_type }} {{ method.name }}({{ method.params | join(', ') }}){% if method.abstract %};{% else %} {
-        throw new UnsupportedOperationException("Not implemented");
+{% for line in method.body_lines %}
+{{ ('        ' ~ line) if line.strip() else '' }}
+{% endfor %}
     }{% endif %}
 
 {% endfor %}
 }
+{% endif %}

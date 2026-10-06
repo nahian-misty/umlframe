@@ -17,11 +17,18 @@ class {{ class_name }}{% if parent %} extends {{ parent }}{% endif %} {
 {% else %}
         // initialise fields above
 {% endif %}
+{% if forbid_instantiation %}
+        if (new.target === {{ class_name }}) {
+            throw new TypeError('{{ class_name }} is abstract and cannot be instantiated');
+        }
+{% endif %}
     }
 
 {% for method in methods %}
     {{ 'static ' if method.static else '' }}{{ method.prefixed_name }}({{ method.params | join(', ') }}) {
-        throw new Error('Not implemented');
+{% for line in method.body_lines %}
+{{ ('        ' ~ line) if line.strip() else '' }}
+{% endfor %}
     }
 
 {% endfor %}

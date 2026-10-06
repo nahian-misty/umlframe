@@ -158,3 +158,44 @@ def test_dependency_renders_dashed_arrow_no_multiplicity_with_label():
     diagram = document_to_class_diagram(_two_class_doc(rel))
     assert "Dog ..> Animal : uses" in diagram
     assert '"1"' not in diagram
+
+
+def test_interface_and_abstract_kinds_render_mermaid_annotations():
+    from backend.schemas.uml import ClassKind
+
+    owner = _empty_class("class_1", "Owner")
+    owner.kind = ClassKind.INTERFACE
+    shape = _empty_class("class_2", "Shape")
+    shape.kind = ClassKind.ABSTRACT
+    plain = _empty_class("class_3", "Plain")
+
+    doc = UmlDocument(classes=[owner, shape, plain], relationships=[])
+
+    assert document_to_class_diagram(doc) == (
+        "classDiagram\n"
+        "    class Owner {\n"
+        "        <<interface>>\n"
+        "    }\n"
+        "    class Shape {\n"
+        "        <<abstract>>\n"
+        "    }\n"
+        "    class Plain {\n"
+        "    }"
+    )
+
+
+def test_realization_renders_a_dotted_inheritance_arrow():
+    doc = UmlDocument(
+        classes=[_empty_class("class_1", "Person"), _empty_class("class_2", "Owner")],
+        relationships=[
+            Relationship(
+                id="rel_1",
+                source="class_1",
+                destination="class_2",
+                type=RelationshipType.REALIZATION,
+                multiplicity=Multiplicity(source="1", destination="1"),
+            )
+        ],
+    )
+
+    assert document_to_class_diagram(doc).endswith("    Person ..|> Owner")

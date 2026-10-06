@@ -14,6 +14,7 @@ export interface RelationshipStyle {
  * association: solid line, open arrowhead at destination
  * dependency: dashed line, open arrowhead at destination
  * inheritance: solid line, hollow triangle at destination
+ * realization: dashed line, hollow triangle at destination (a class implementing an interface)
  * aggregation: solid line, hollow diamond at source (the "whole" side)
  * composition: solid line, filled diamond at source (the "whole" side)
  */
@@ -21,6 +22,7 @@ export const RELATIONSHIP_STYLES: Record<RelationshipType, RelationshipStyle> = 
   association: { dashed: false, markerEnd: 'arrow-open', showMultiplicity: true },
   dependency: { dashed: true, markerEnd: 'arrow-open', showMultiplicity: true },
   inheritance: { dashed: false, markerEnd: 'triangle-hollow', showMultiplicity: false },
+  realization: { dashed: true, markerEnd: 'triangle-hollow', showMultiplicity: false },
   aggregation: { dashed: false, markerStart: 'diamond-hollow', showMultiplicity: true },
   composition: { dashed: false, markerStart: 'diamond-filled', showMultiplicity: true },
 };
@@ -31,4 +33,5 @@ export const RELATIONSHIP_LABELS: Record<RelationshipType, string> = {
   composition: 'Composition',
   inheritance: 'Inheritance',
   dependency: 'Dependency',
+  realization: 'Realization',
 };

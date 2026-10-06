@@ -8,6 +8,7 @@ TYPE_MAP: dict[str, str] = {
     "Float": "float",
     "double": "float",
     "Double": "float",
+    "boolean": "bool",
     "bool": "bool",
     "Boolean": "bool",
     "void": "None",
@@ -39,3 +40,6 @@ VISIBILITY_KEYWORD: dict[str, str] = {
 
 FILE_EXTENSION = ".py"
 TEMPLATE_DIR = "python"
+
+# Body printed for a method nobody has implemented (also used for abstract methods).
+STUB_BODY_LINES: list[str] = ["..."]

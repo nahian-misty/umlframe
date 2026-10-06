@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.schemas.uml import (
     Attribute,
+    ClassKind,
     Method,
     Relationship,
     RelationshipType,
@@ -16,11 +17,18 @@ _VISIBILITY_SYMBOLS: dict[Visibility, str] = {
     Visibility.PACKAGE: "~",
 }
 
+# Mermaid annotation shown above the class name; a plain class carries none.
+_KIND_ANNOTATIONS: dict[ClassKind, str] = {
+    ClassKind.INTERFACE: "<<interface>>",
+    ClassKind.ABSTRACT: "<<abstract>>",
+}
+
 # Mermaid classDiagram edge tokens. The "whole" end of a composition/
 # aggregation always carries the diamond, matching this schema's convention
 # of `source` being the owning ("whole") class for both relationship types.
 _RELATIONSHIP_ARROWS: dict[RelationshipType, str] = {
     RelationshipType.INHERITANCE: "--|>",
+    RelationshipType.REALIZATION: "..|>",
     RelationshipType.COMPOSITION: "*--",
     RelationshipType.AGGREGATION: "o--",
     RelationshipType.ASSOCIATION: "-->",
@@ -45,6 +53,8 @@ def document_to_class_diagram(document: UmlDocument) -> str:
     lines = ["classDiagram"]
     for cls in document.classes:
         lines.append(f"    class {cls.name} {{")
+        if cls.kind in _KIND_ANNOTATIONS:
+            lines.append(f"        {_KIND_ANNOTATIONS[cls.kind]}")
         lines.extend(f"        {_render_attribute(attr)}" for attr in cls.attributes)
         lines.extend(f"        {_render_method(method)}" for method in cls.methods)
         lines.append("    }")

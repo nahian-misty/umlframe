@@ -1,6 +1,7 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { AttributeState, MethodState, UmlClassState } from '../../types/diagram';
+import type { ClassKind } from '../../types/uml';
 import { AttributeRow } from './AttributeRow';
 import { MethodRow } from './MethodRow';
 import styles from './UmlClassBox.module.css';
@@ -12,6 +13,13 @@ interface UmlClassBoxProps {
   onPointerDownBox: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onUpdate: (patch: Partial<Omit<UmlClassState, 'id'>>) => void;
 }
+
+const KIND_LABELS: Record<ClassKind, string> = {
+  class: '«class»',
+  abstract: '«abstract»',
+  interface: '«interface»',
+};
+const KIND_ORDER: ClassKind[] = ['class', 'abstract', 'interface'];
 
 function newAttribute(classId: string): AttributeState {
   return {
@@ -95,8 +103,28 @@ export function UmlClassBox({
       data-class-id={cls.id}
     >
       <div className={styles.nameCompartment}>
+        <div className={styles.kindRow}>
+          <label
+            className={styles.kindLabel}
+            title="Change between class, abstract class and interface"
+          >
+            <span className={styles.kindText}>{KIND_LABELS[cls.kind]}</span>
+            <select
+              className={styles.kindSelect}
+              value={cls.kind}
+              aria-label="Class kind"
+              onChange={(e) => onUpdate({ kind: e.target.value as ClassKind })}
+            >
+              {KIND_ORDER.map((kind) => (
+                <option key={kind} value={kind}>
+                  {KIND_LABELS[kind]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <input
-          className={styles.nameInput}
+          className={`${styles.nameInput} ${cls.kind === 'abstract' ? styles.abstractName : ''}`}
           value={cls.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
         />

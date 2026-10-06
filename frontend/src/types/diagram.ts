@@ -1,4 +1,4 @@
-import type { Multiplicity, RelationshipType, Visibility } from './uml';
+import type { ClassKind, Multiplicity, RelationshipType, Visibility } from './uml';
 
 /**
  * Internal editor state. Field names match the Unified UML JSON wire format
@@ -34,6 +34,7 @@ export interface MethodState {
 export interface UmlClassState {
   id: string;
   name: string;
+  kind: ClassKind;
   attributes: AttributeState[];
   methods: MethodState[];
   position: { x: number; y: number };

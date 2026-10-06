@@ -25,6 +25,39 @@
   cursor: move;
 }
 
+/* The row stays a drag handle; only the label text itself opens the selector. */
+.kindRow {
+  text-align: center;
+  cursor: move;
+  min-height: 16px;
+}
+
+.kindLabel {
+  position: relative;
+  display: inline-block;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.kindText {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* The native select sits invisibly over the label so the exported PNG shows the text. */
+.kindSelect {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.abstractName {
+  font-style: italic;
+}
+
 .nameInput {
   width: 100%;
   font-weight: 600;

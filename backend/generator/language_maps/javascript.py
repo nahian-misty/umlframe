@@ -6,6 +6,7 @@ TYPE_MAP: dict[str, str] = {
     "long": "number",
     "float": "number",
     "double": "number",
+    "boolean": "boolean",
     "bool": "boolean",
     "Boolean": "boolean",
     "void": "void",
@@ -36,3 +37,6 @@ VISIBILITY_PREFIX: dict[str, str] = {
 
 FILE_EXTENSION = ".js"
 TEMPLATE_DIR = "javascript"
+
+# Body printed for a method nobody has implemented (also used for abstract methods).
+STUB_BODY_LINES: list[str] = ["throw new Error('Not implemented');"]
