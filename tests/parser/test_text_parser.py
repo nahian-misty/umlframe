@@ -1,10 +1,14 @@
+import pytest
 
 from backend.parser.text_parser import (
     ParsedAttribute,
     ParsedMethod,
+    is_method_line,
     parse_attribute_line,
+    parse_class_header,
     parse_class_name,
     parse_method_line,
+    parse_multiplicity,
 )
 
 # ---------------------------------------------------------------------------
@@ -145,3 +149,112 @@ def test_method_ocr_semicolon_in_return():
     result = parse_method_line("+ getEmail() ; String")
     assert result is not None
     assert result.return_type == "String"
+
+
+# ---------------------------------------------------------------------------
+# Class header: stereotypes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("<<interface>>\nOwner", ("Owner", "interface")),
+        ("«interface»\nOwner", ("Owner", "interface")),
+        ("<<abstract>>\nShape", ("Shape", "abstract")),
+        ("Shape {abstract}", ("Shape", "abstract")),
+        ("<<Interface>> Owner", ("Owner", "interface")),
+        ("User", ("User", None)),
+    ],
+)
+def test_class_header_reads_stereotype_and_name(text, expected):
+    assert parse_class_header(text) == expected
+
+
+def test_class_name_skips_the_stereotype_line():
+    assert parse_class_name("<<interface>>\nOwner") == "Owner"
+
+
+# ---------------------------------------------------------------------------
+# OCR repairs
+# ---------------------------------------------------------------------------
+
+
+def test_brace_read_for_parenthesis_is_repaired():
+    assert parse_method_line("+quack{)") == ParsedMethod("quack", "public", [], "void")
+
+
+def test_trailing_border_noise_is_dropped():
+    assert parse_method_line("+mate() |") == ParsedMethod("mate", "public", [], "void")
+
+
+def test_curly_quotes_in_default_value_become_straight():
+    result = parse_attribute_line("+beakColr: String = “yellow”")
+    assert result is not None
+    assert result.default_value == '"yellow"'
+
+
+@pytest.mark.parametrize("written", ["String[ ]", "String ]", "String[]"])
+def test_array_types_are_normalised(written):
+    result = parse_attribute_line(f"- authors : {written}")
+    assert result is not None
+    assert result.datatype == "String[]"
+
+
+def test_array_return_type_is_normalised():
+    result = parse_method_line("+getAuthors() : String ]")
+    assert result is not None
+    assert result.return_type == "String[]"
+
+
+@pytest.mark.parametrize(
+    "read,written",
+    [("sizelnFt", "sizeInFt"), ("lsOpen", "isOpen"), ("isOpen", "isOpen"), ("kiln", "kiln")],
+)
+def test_capital_i_read_as_l_is_repaired_in_camel_case(read, written):
+    result = parse_attribute_line(f"- {read} : int")
+    assert result is not None
+    assert result.name == written
+
+
+def test_is_method_line_sees_through_brace_noise():
+    assert is_method_line("+quack{)")
+    assert not is_method_line("+age: Int")
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1", "1"),
+        ("*", "*"),
+        ("0..*", "0..*"),
+        ("0.*", "0..*"),
+        ("0..", "0..*"),
+        ("1,.*", "1..*"),
+        ("0..1", "0..1"),
+        ("n", "*"),
+        ("abc", None),
+        ("", None),
+    ],
+)
+def test_multiplicity_is_normalised(text, expected):
+    assert parse_multiplicity(text) == expected
+
+
+@pytest.mark.parametrize("written,value", [("400ft", '"400ft"'), ("blue", '"blue"'), ("no", '"no"')])
+def test_a_value_written_where_a_type_goes_becomes_a_quoted_default(written, value):
+    result = parse_attribute_line(f"- x : {written}")
+    assert result is not None
+    assert (result.datatype, result.default_value) == ("String", value)
+
+
+@pytest.mark.parametrize("written", ["Color", "double", "String[]", "List<String>"])
+def test_real_types_are_kept(written):
+    result = parse_attribute_line(f"- x : {written}")
+    assert result is not None
+    assert (result.datatype, result.default_value) == (written, None)
+
+
+def test_a_return_type_that_is_not_a_type_falls_back_to_void():
+    result = parse_method_line("+ numSeats() : 5")
+    assert result is not None
+    assert result.return_type == "void"

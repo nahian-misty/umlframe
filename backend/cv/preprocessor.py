@@ -82,3 +82,66 @@ def preprocess_ink(
     color = load_image(flatten_alpha(image_bytes))
     gray = to_grayscale(color)
     return color, gray, ink_binary(gray)
+
+
+# Light fills (a coloured header, a tinted box) sit below the ink floor and would
+# turn whole compartments into solid ink. When the wide binary has this much solid
+# area and the plain Otsu one does not, the outlines are dark enough for Otsu.
+SOLID_KERNEL = 9
+SOLID_FILL_FRACTION = 0.01
+
+
+def _solid_fraction(binary: npt.NDArray[np.uint8]) -> float:
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (SOLID_KERNEL, SOLID_KERNEL))
+    return float((cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel) > 0).mean())
+
+
+def class_ink_binary(gray: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Binary-inverted ink for class diagrams: ink_binary(), unless that turns
+    light box fills into solid ink, in which case plain Otsu (dark strokes only)."""
+    wide = ink_binary(gray)
+    if _solid_fraction(wide) <= SOLID_FILL_FRACTION:
+        return wide
+    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, dark = cv2.threshold(gray, otsu, 255, cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    dark = np.asarray(cv2.morphologyEx(dark, cv2.MORPH_CLOSE, kernel), dtype=np.uint8)
+    return dark if _solid_fraction(dark) < _solid_fraction(wide) / 2 else wide
+
+
+def preprocess_class_ink(
+    image_bytes: bytes,
+) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], npt.NDArray[np.uint8]]:
+    """preprocess_ink() with class_ink_binary(): the class-diagram image pipeline."""
+    color = load_image(flatten_alpha(image_bytes))
+    gray = to_grayscale(color)
+    return color, gray, class_ink_binary(gray)
+
+
+# Darkest thresholds tried, in order, when a coloured node fill is dark enough to count as ink.
+ACTIVITY_FILL_THRESHOLDS = (150, 120, 90, 60)
+
+
+def activity_ink_binary(gray: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Binary-inverted ink for activity diagrams. Starts from class_ink_binary(); if a coloured
+    node fill (purple, green, red...) is still dark enough to be solid ink, the threshold is
+    lowered until fills fall back to background and only outlines, lines and text remain."""
+    binary = class_ink_binary(gray)
+    if _solid_fraction(binary) <= SOLID_FILL_FRACTION:
+        return binary
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    for threshold in ACTIVITY_FILL_THRESHOLDS:
+        _, darker = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)
+        darker = np.asarray(cv2.morphologyEx(darker, cv2.MORPH_CLOSE, kernel), dtype=np.uint8)
+        if _solid_fraction(darker) <= SOLID_FILL_FRACTION:
+            return darker
+    return binary
+
+
+def preprocess_activity_ink(
+    image_bytes: bytes,
+) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], npt.NDArray[np.uint8]]:
+    """preprocess_ink() with activity_ink_binary(): the activity-diagram image pipeline."""
+    color = load_image(flatten_alpha(image_bytes))
+    gray = to_grayscale(color)
+    return color, gray, activity_ink_binary(gray)
