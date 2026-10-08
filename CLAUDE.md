@@ -38,13 +38,17 @@ This section reflects what actually exists in the repo today, as distinct from t
 | M8 — Authentication & Projects | Done | `backend/db/models.py` defines `User`/`Project` (SQLite via SQLAlchemy, `backend/db/session.py`); `backend/services/auth_service.py` (bcrypt + PyJWT) and `project_service.py` (ownership-scoped CRUD) implemented; `backend/api/dependencies/auth.py` provides the `get_current_user` bearer-token guard; `/api/auth/*` and `/api/projects/*` routes+controllers registered in `main.py`. Frontend has real `react-router-dom` routing (`/`, `/login`, `/register`, `/dashboard`, `/editor/:projectId`), an `AuthContext` with persisted JWT sessions, a `ProtectedRoute` guard, a real project-CRUD `DashboardPage`, and `EditorPage` load/save wired to a project's diagram. New marketing `HomePage` added at `/`. |
 | M9 — Activity Diagram Forward Pipeline | Done | Full forward pipeline implemented. **Schema:** `backend/schemas/activity.py` (`ActivityDocument`, `ActivityNode`, `ActivityEdge`, `ActivityNodeType`; `model_validator` checks referential integrity, exactly one START, ≥1 END). **Structuring:** `backend/services/activity_structuring.py` (if/else from a decision + nearest reconvergence; `while` from a back edge into a decision; every out-of-scope shape — fork/join, non-binary decision, irreducible/multi-back-edge loop, no convergence — raises `ValueError`). **Codegen:** `backend/services/activity_codegen_service.py` + `backend/generator/templates/{python,java,javascript}/activity.j2` (recursive macro; action bodies `# TODO:`/`pass`, decisions `if True:`/`if (true)` + label-as-comment, loops `while False:`/`while (Boolean.FALSE)` — never fabricated). **CV:** `backend/cv/activity_shape_detector.py` (`detect_activity_shapes` classifies start/end/action/decision/bar via circularity + bounding-box extent + vertex-position; `detect_activity_connectors` finds line segments via connected components after erasing shape footprints — reuses `preprocessor.py` unchanged). **OCR:** `backend/ocr/activity_extractor.py` (reuses `extractor.py`'s crop/pad/upscale/Otsu recipe for action labels and edge guard text). **Parser:** `backend/parser/activity_text_parser.py` (`normalize_label`, `classify_guard` → `"yes"`/`"no"`/`""`). **Edge orientation:** `activity_image_service._orient_edges` — DFS from the unique START over the undirected CV adjacency, disambiguated by BFS hop-distance from START (flow runs away from START; a back edge targets a node still on the DFS stack; a node unreachable from START or a downward back edge raises `ValueError`). **API:** `POST /api/activity-image-to-json` (route + controller mirror `image.py`; `ActivityReverseResponse` model) and `POST /api/generate-activity-code` (`GenerateActivityCodeRequest`, reuses `CodeGenerationResponse`). **Frontend:** the "Activity → Code" header flow (upload image → `ActivityDocument` → structured function → `CodeViewer`). Tested: `tests/schemas/test_activity.py`, `tests/services/test_activity_{structuring,codegen_service,image_service}.py`, `tests/cv/test_activity_shape_detector.py`, `tests/ocr/test_activity_extractor.py`, `tests/api/routes/test_activity_{codegen,image}.py`, `tests/api/controllers/test_activity_{codegen,image}_controller.py`, `tests/integration/test_activity_pipeline_e2e.py`. **v1 limits (scope decision):** CV/OCR handle clean, programmatically-rendered diagrams only — same bar as the class-diagram image pipeline; connector lines are matched to shapes by proximity (a small gap between line end and shape is expected, as clean renders produce), and a diagram whose shapes and lines form one fully-connected blob is not reliably segmented. |
 
-Eight route/controller pairs are registered in `backend/main.py`: `auth`, `projects`, `codegen`, `image`, `reverse` (Python, Java, JavaScript), `mermaid` (both `class` and `activity` `diagram_type`s), `activity_codegen` (`/api/generate-activity-code`), and `activity_image` (`/api/activity-image-to-json`).
+Nine route/controller pairs are registered in `backend/main.py`: `auth`, `projects`, `codegen`, `image`, `reverse` (Python, Java, JavaScript), `mermaid` (both `class` and `activity` `diagram_type`s), `activity_codegen` (`/api/generate-activity-code`), `activity_image` (`/api/activity-image-to-json`), and `activity_render` (`/api/activity-json-to-image`).
 
 ### Editor tabs and activity canvas (added 2026-10-04)
 
 The editor (`EditorPage`) now has four tabs instead of header modals: UML → Code, Code → UML, Activity → Code, Code → Activity (`frontend/src/components/editor/`). The two code-input tabs are split panes (source inputs left, canvas right). Activity tabs share one editable activity canvas (`ActivityCanvas`, `useActivityDiagram`/`ActivityDiagramContext`, `components/activity/`): draw start/action/decision/end/fork/join nodes, connect them, edit labels and guard text, auto-layout for diagrams that arrive from code or an image (`utils/activityLayout.ts`), and a frontend pre-check mirroring the structuring rules (`utils/activityValidation.ts`). `Project` gained an optional `activity_document` (`ActivityDocument`, `projects.activity_document` column, added to existing SQLite files by `db/session.py:add_missing_project_columns`); `PUT /api/projects/{id}` accepts it and `GET` returns it. The editor only sends it when it satisfies the schema (one START, at least one END), so an unfinished drawing never fails the save.
 
 **Activity image pipeline hardening (2026-10-04).** The Activity → Code image path now accepts the editor's own Export PNG, where lines touch every node: `detect_activity_shapes` finds outlined nodes by their enclosed interior and the start marker/bars by morphological opening (so a touching line cannot hide them); connector ends are found by path distance (curved back edges); the service binarizes with a light-grey floor and flattens transparent PNGs onto white; guard text is read from the dark ink beside each edge (`extract_edge_guard_candidates`) and `classify_guard` tolerates one-character OCR slips. The editor's Export PNG always renders with the light palette (`html.export-light`) and SVG edges use literal colour attributes (`useCssColors`) because html-to-image drops `var()`/class/style on SVG. Known limit: two connectors that cross are still fused into one blob. Regression fixture: `tests/fixtures/activity_canvas_export.png`.
+
+### Re-importable activity PNG (2026-10-06)
+
+The Mermaid flowchart shown in Code → Activity uses a look the activity CV pipeline cannot read (text baked inside circles, curved arrows touching node borders). `backend/services/activity_diagram_renderer.py` (`render_activity_diagram`, Pillow) draws the same `ActivityDocument` with the conventions `activity_shape_detector.py` was built against (filled circle START, ringed circle END, outlined rounded-rect ACTION, outlined diamond DECISION) and enough clearance that no connector touches a shape's bounding box. It lays out via `activity_structuring`'s Action/If/While IR rather than the raw graph. Exposed as `POST /api/activity-json-to-image` (`routes/activity_render.py`, `controllers/activity_render_controller.py`, `ActivityDiagramImageRequest`/`ActivityDiagramImageResponse`); the Code → Activity tab's "download re-importable PNG" button calls it via `activityJsonToImage` in `frontend/src/api/activityApi.ts`. Tested: `tests/services/test_activity_diagram_renderer.py`, `tests/api/routes/test_activity_render.py`, `tests/api/controllers/test_activity_render_controller.py`.
 
 ### Class-diagram image pipeline hardening and class kinds (2026-10-05)
 
@@ -91,23 +95,23 @@ umlframe/
 │   │   ├── routes/            # FastAPI APIRouter definitions — URL patterns only
 │   │   │   ├── auth.py        # /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me
 │   │   │   ├── projects.py    # /api/projects CRUD
-│   │   │   ├── implementation.py  # /api/implement-code, /api/implement-code/status
 │   │   │   ├── image.py       # /api/image-to-json
 │   │   │   ├── codegen.py     # /api/generate-code, /api/languages, /api/templates
 │   │   │   ├── reverse.py     # /api/reverse
 │   │   │   ├── mermaid.py     # /api/json-to-mermaid
 │   │   │   ├── activity_image.py    # /api/activity-image-to-json
-│   │   │   └── activity_codegen.py  # /api/generate-activity-code
+│   │   │   ├── activity_codegen.py  # /api/generate-activity-code
+│   │   │   └── activity_render.py   # /api/activity-json-to-image
 │   │   ├── controllers/       # Request/response handling; calls services; no domain logic
 │   │   │   ├── auth_controller.py
 │   │   │   ├── project_controller.py
-│   │   │   ├── implementation_controller.py
 │   │   │   ├── image_controller.py
 │   │   │   ├── codegen_controller.py
 │   │   │   ├── reverse_controller.py
 │   │   │   ├── mermaid_controller.py
 │   │   │   ├── activity_image_controller.py
-│   │   │   └── activity_codegen_controller.py
+│   │   │   ├── activity_codegen_controller.py
+│   │   │   └── activity_render_controller.py
 │   │   └── dependencies/      # FastAPI dependency injection (auth guard, shared across routes)
 │   ├── models/                # Pydantic models for the HTTP boundary (requests + responses)
 │   │   ├── requests.py        # GenerateCodeRequest, ReverseRequest, GenerateActivityCodeRequest, JsonToMermaidRequest, etc.
@@ -123,11 +127,10 @@ umlframe/
 │   │   ├── codegen_service.py # Sequences schemas/ → generator/
 │   │   ├── reverse_service.py # Sequences reverse/ → schemas/
 │   │   ├── mermaid_service.py # Sequences schemas/ → mermaid/
-│   │   ├── implementation_service.py    # Sequences generator/ (describe) → llm/ → validate → generator/ (render with bodies)
 │   │   ├── activity_image_service.py    # Sequences cv/ → ocr/ → parser/ → schemas/activity.py; resolves edge direction via DFS-from-START (BFS-hop disambiguated)
 │   │   ├── activity_structuring.py      # Reconstructs if/else + while IR from the ActivityDocument graph
-│   │   └── activity_codegen_service.py  # Sequences the structured IR → generator/templates/*/activity.j2
-│   ├── llm/                   # Optional LLM client + prompt/parse/validate helpers (OpenRouter); no HTTP routes, no schema imports beyond generator/class_description.py
+│   │   ├── activity_codegen_service.py  # Sequences the structured IR → generator/templates/*/activity.j2
+│   │   └── activity_diagram_renderer.py # ActivityDocument → CV-compatible PNG (Pillow); the re-importable counterpart of the Mermaid view
 │   ├── db/                    # Persistence layer (SQLAlchemy)
 │   │   ├── models.py          # ORM models: User, Project
 │   │   └── session.py         # Engine/session setup and dependency provider
@@ -416,13 +419,12 @@ All endpoints live under `/api`. All request and response bodies are JSON.
 | `POST` | `/api/image-to-json` | Run CV + OCR pipeline on uploaded image; return Unified UML JSON |
 | `POST` | `/api/generate-code` | Accept Unified UML JSON + target language; return generated source files |
 | `POST` | `/api/reverse` | Accept source + language; return Unified UML JSON. With `class_name` + `method_name`, also returns that method's `control_flow` (an `ActivityDocument`). |
-| `POST` | `/api/implement-code` | Body `{document, language, instructions}` (instructions ≤ 2000 chars). Generates the normal scaffold, then asks the configured OpenRouter model for the bodies of the non-abstract methods; returns `{files, implemented, skipped[{key, reason}], models}`. Bearer-protected. 503 if no LLM is configured, 429 if every model is rate-limited, 502 on upstream failure. |
-| `GET` | `/api/implement-code/status` | `{available}` — whether `OPENROUTER_API_KEY` and `OPENROUTER_MODELS` are set. |
 | `POST` | `/api/reverse-control-flows` | Accept source + language; return `{methods: [{class_name, method_name, control_flow, error}]}` — the control flow of every method found, so callers need not name one. A method that cannot be reduced carries `error` instead of failing the request; no methods at all → 422. |
 | `POST` | `/api/json-to-mermaid` | Accept Unified UML JSON; return Mermaid diagram text. `diagram_type` of `class` (default, needs `document`) or `activity` (needs `activity`, an `ActivityDocument`) selects which Mermaid output is rendered. |
 | `GET` | `/api/languages` | Return list of supported target languages |
 | `GET` | `/api/templates` | Return available code generation templates |
 | `POST` | `/api/activity-image-to-json` | Run CV + OCR pipeline on an uploaded activity-diagram image; return `ActivityDocument` |
+| `POST` | `/api/activity-json-to-image` | Body `{activity}` (an `ActivityDocument`); returns `{image_base64}`, a PNG drawn with the shape conventions `activity_shape_detector.py` recognises, so it can be uploaded back into Activity → Code. Reuses `activity_structuring` to lay out, so a diagram the structuring rules reject → 422. |
 | `POST` | `/api/generate-activity-code` | Accept `ActivityDocument` + target language (+ optional `function_name`); return a standalone generated function with real control-flow structure |
 
 ### Request/Response Rules
@@ -448,7 +450,7 @@ All endpoints live under `/api`. All request and response bodies are JSON.
 
 ### Configuration (environment / `.env`)
 
-`.env` at the repo root is read on startup (see `.env.example`; real secrets are never committed). `DATABASE_URL`, `JWT_SECRET_KEY`, `CORS_ORIGINS`, and for the optional LLM feature `OPENROUTER_API_KEY` plus `OPENROUTER_MODELS` (comma-separated model ids, tried in order when one is rate-limited or unavailable; free models change often, so none is hardcoded). `OPENROUTER_BASE_URL` overrides the endpoint (used by tests and local stubs). With no key or no models the feature reports itself unavailable and the UI disables the toggle.
+`.env` at the repo root is read on startup (see `.env.example`; real secrets are never committed). `DATABASE_URL`, `JWT_SECRET_KEY`, `CORS_ORIGINS`.
 
 ---
 
@@ -665,7 +667,5 @@ Schema changes are the most expensive change in this codebase. Avoid them.
 6. **The frontend serializes; the backend validates.** The frontend produces JSON; the backend validates it. The frontend never assumes its JSON is valid without a backend round-trip that includes schema validation.
 
 7. **Generated code is a best-effort scaffold, not production code.** Templates produce compilable structure, not complete implementations. Method bodies are stubs. Do not attempt to generate method logic.
-
-   **Scoped exception — optional LLM method implementation:** `POST /api/implement-code` (UML → Code tab, "Implement methods with AI") lets a language model write the *bodies* of non-abstract methods. It is opt-in per request; the stub scaffold remains the default and the fallback for every method the model does not deliver. The model is given only data derived from the validated `UmlDocument` (class description built by `codegen_service.describe_class`) plus the user's free-text notes, returns only method-body text (never JSON for the pipeline), and that text is syntax-checked (`backend/llm/validators.py`) and spliced through the same templates (`MethodContext.body_lines`) — it is never executed. Output is labelled AI-generated in the UI. This does not relax Principle 7 anywhere else.
 
    **Scoped exception — Milestone 9 (Activity Diagram Forward Pipeline):** this pipeline's entire purpose is generating real control-flow *structure* (`if`/`else`, `while`) from an activity diagram, which looks like "method logic" at a glance. The exception is narrow and does not relax this principle anywhere else: only the branching/looping *shape* mirrors the diagram; the content inside every action stays a placeholder (`# TODO: <label>` / `pass`), and every decision condition stays a literal placeholder (`if True:` / `while False:`) with the diagram's label preserved only as a comment — no boolean expression, no business logic is ever synthesized from OCR'd text. If a future change to this milestone starts inventing conditions or action bodies, that is a violation of this principle, not an extension of the exception.
