@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import textwrap
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import jinja2
 
 from backend.generator import registry as reg
-from backend.generator.class_description import (
-    AttributeDescription,
-    ClassDescription,
-    CollaboratorDescription,
-    MethodDescription,
-)
 from backend.generator.registry import LanguageConfig
 from backend.schemas.uml import (
     Attribute,
@@ -97,27 +89,10 @@ def _build_attr_context(attr: Attribute, config: LanguageConfig, class_names: se
     )
 
 
-TAB_AS_SPACES = "    "
-MAX_COLLABORATOR_METHODS = 10
-
-
-def _normalize_body_lines(body: str | None) -> list[str] | None:
-    """A supplied method body as clean, unindented lines, or None when it has no content."""
-    if body is None:
-        return None
-    lines = [line.rstrip() for line in textwrap.dedent(body.replace("\t", TAB_AS_SPACES)).split("\n")]
-    while lines and not lines[0]:
-        lines.pop(0)
-    while lines and not lines[-1]:
-        lines.pop()
-    return lines or None
-
-
 def _build_method_context(
     method: Method,
     config: LanguageConfig,
     lang: str,
-    body: str | None = None,
     force_abstract: bool = False,
 ) -> MethodContext:
     mapped_return = _map_type(method.return_type, config.type_map)
@@ -135,7 +110,6 @@ def _build_method_context(
 
     prefix = config.visibility_prefix.get(method.visibility.value, "")
     abstract = method.abstract or force_abstract
-    supplied = None if abstract else _normalize_body_lines(body)
     return MethodContext(
         name=method.name,
         prefixed_name=prefix + method.name,
@@ -144,7 +118,7 @@ def _build_method_context(
         static=method.static,
         abstract=abstract,
         visibility_keyword=keyword,
-        body_lines=supplied if supplied is not None else list(config.stub_body_lines),
+        body_lines=list(config.stub_body_lines),
     )
 
 
@@ -334,7 +308,6 @@ def _build_template_context(
     class_map: dict[str, UmlClass],
     config: LanguageConfig,
     lang: str,
-    bodies: Mapping[int, str] | None = None,
 ) -> dict:
     class_names = {c.name for c in document.classes}
     parent, interfaces = _find_parents(cls, document, class_map)
@@ -357,10 +330,8 @@ def _build_template_context(
 
     static_attributes = [a for a in attrs if a.static]
     instance_attributes = [a for a in attrs if not a.static]
-    bodies = bodies or {}
     methods = [
-        _build_method_context(m, config, lang, bodies.get(index), force_abstract=is_interface)
-        for index, m in enumerate(cls.methods)
+        _build_method_context(m, config, lang, force_abstract=is_interface) for m in cls.methods
     ]
     if cls.kind != ClassKind.INTERFACE:
         # A concrete class must define what its interfaces and abstract parents promise.
@@ -412,14 +383,8 @@ def _build_template_context(
 def generate_code(
     document: UmlDocument,
     language: str,
-    implementations: Mapping[tuple[str, int], str] | None = None,
-    class_ids: set[str] | None = None,
 ) -> dict[str, str]:
-    """Render one source file per class.
-
-    `implementations` optionally maps (class id, index in that class's methods) to a method
-    body; a method without one keeps the language's stub. `class_ids` restricts the output to
-    those classes (used to check a single class on its own)."""
+    """Render one source file per class."""
     if language not in reg.REGISTRY:
         raise ValueError(f"Unsupported language: '{language}'. Supported: {reg.SUPPORTED_LANGUAGES}")
 
@@ -436,131 +401,9 @@ def generate_code(
     files: dict[str, str] = {}
 
     for cls in document.classes:
-        if class_ids is not None and cls.id not in class_ids:
-            continue
-        bodies = {
-            index: body for (cid, index), body in (implementations or {}).items() if cid == cls.id
-        }
-        context = _build_template_context(cls, document, class_map, config, language, bodies)
+        context = _build_template_context(cls, document, class_map, config, language)
         content = template.render(**context)
         filename = cls.name + config.file_extension
         files[filename] = content
 
     return files
-
-
-# ---------------------------------------------------------------------------
-# Class descriptions (input for the optional LLM method implementation)
-# ---------------------------------------------------------------------------
-
-
-def _member_access(language: str, class_name: str, name: str, static: bool) -> str:
-    owner = class_name if static else ("self" if language == "python" else "this")
-    return f"{owner}.{name}"
-
-
-def _method_signature(method: MethodContext, language: str) -> str:
-    params = ", ".join(method.params)
-    if language == "python":
-        self_part = [] if method.static else ["self"]
-        return f"def {method.prefixed_name}({', '.join(self_part + method.params)}) -> {method.return_type}"
-    if language == "java":
-        modifiers = " ".join(
-            part for part in (method.visibility_keyword, "static" if method.static else "") if part
-        )
-        return f"{modifiers} {method.return_type} {method.name}({params})".strip()
-    return f"{'static ' if method.static else ''}{method.prefixed_name}({params})"
-
-
-def _method_keys(methods: list[Method], class_name: str) -> list[str]:
-    seen: dict[str, int] = {}
-    keys: list[str] = []
-    for method in methods:
-        seen[method.name] = seen.get(method.name, 0) + 1
-        suffix = "" if seen[method.name] == 1 else f"#{seen[method.name]}"
-        keys.append(f"{class_name}.{method.name}{suffix}")
-    return keys
-
-
-def _collaborators(
-    cls: UmlClass,
-    document: UmlDocument,
-    class_map: dict[str, UmlClass],
-    config: LanguageConfig,
-    language: str,
-) -> list[CollaboratorDescription]:
-    collaborators: list[CollaboratorDescription] = []
-    for rel in document.relationships:
-        if rel.source == cls.id:
-            other, role = class_map[rel.destination], "this class uses, owns or extends it"
-        elif rel.destination == cls.id:
-            other, role = class_map[rel.source], "it uses, owns or extends this class"
-        else:
-            continue
-        public_methods = [
-            _method_signature(_build_method_context(m, config, language), language)
-            for m in other.methods
-            if m.visibility.value == "public"
-        ][:MAX_COLLABORATOR_METHODS]
-        collaborators.append(
-            CollaboratorDescription(
-                kind=rel.type.value, role=role, class_name=other.name, methods=public_methods
-            )
-        )
-    return collaborators
-
-
-def describe_class(document: UmlDocument, class_id: str, language: str) -> ClassDescription:
-    """Describe a class the way its generated scaffold names things, for a model that will
-    write method bodies (signatures, how to reach attributes and sibling methods, collaborators)."""
-    if language not in reg.REGISTRY:
-        raise ValueError(f"Unsupported language: '{language}'. Supported: {reg.SUPPORTED_LANGUAGES}")
-    class_map = {c.id: c for c in document.classes}
-    if class_id not in class_map:
-        raise ValueError(f"Class '{class_id}' not found")
-    cls = class_map[class_id]
-    config = reg.REGISTRY[language]
-
-    context = _build_template_context(cls, document, class_map, config, language)
-    attributes = [
-        AttributeDescription(
-            name=attr.name,
-            type=attr.type,
-            access=_member_access(
-                language,
-                cls.name,
-                attr.name if language == "java" else attr.prefixed_name,
-                attr.static,
-            ),
-            static=attr.static,
-            final=attr.final,
-        )
-        for attr in context["attributes"]
-    ]
-    keys = _method_keys(cls.methods, cls.name)
-    methods = [
-        MethodDescription(
-            index=index,
-            key=keys[index],
-            name=method.name,
-            signature=_method_signature(method, language),
-            access=_member_access(
-                language,
-                cls.name,
-                method.name if language == "java" else method.prefixed_name,
-                method.static,
-            ),
-            return_type=method.return_type,
-            static=method.static,
-            abstract=method.abstract,
-        )
-        for index, method in enumerate(context["methods"])
-    ]
-    return ClassDescription(
-        class_name=cls.name,
-        language=language,
-        parent=context["parent"],
-        attributes=attributes,
-        methods=methods,
-        collaborators=_collaborators(cls, document, class_map, config, language),
-    )

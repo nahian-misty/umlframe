@@ -6,7 +6,6 @@ from pathlib import Path
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 DEFAULT_DATABASE_URL = "mysql+pymysql://mistyy@localhost:3306/umlframe"
-DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def _load_env_file(path: Path) -> None:
@@ -32,21 +31,6 @@ class Settings:
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = field(
         default_factory=lambda: int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-    )
-    # OpenRouter powers the optional LLM method implementation; with no key or no models the
-    # feature reports itself as unavailable instead of failing at request time.
-    openrouter_api_key: str = field(
-        default_factory=lambda: os.environ.get("OPENROUTER_API_KEY", "").strip()
-    )
-    openrouter_models: tuple[str, ...] = field(
-        default_factory=lambda: tuple(
-            model.strip()
-            for model in os.environ.get("OPENROUTER_MODELS", "").split(",")
-            if model.strip()
-        )
-    )
-    openrouter_base_url: str = field(
-        default_factory=lambda: os.environ.get("OPENROUTER_BASE_URL", DEFAULT_OPENROUTER_BASE_URL)
     )
     cors_origins: list[str] = field(
         default_factory=lambda: os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")

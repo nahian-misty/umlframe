@@ -11,22 +11,6 @@ class CodeGenerationResponse(BaseModel):
     files: dict[str, str]
 
 
-class SkippedMethodResponse(BaseModel):
-    key: str
-    reason: str
-
-
-class ImplementCodeResponse(BaseModel):
-    files: dict[str, str]
-    implemented: list[str]
-    skipped: list[SkippedMethodResponse]
-    models: list[str]
-
-
-class ImplementStatusResponse(BaseModel):
-    available: bool
-
-
 class LanguageListResponse(BaseModel):
     languages: list[str]
 
