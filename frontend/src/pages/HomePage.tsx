@@ -1,8 +1,7 @@
-import { Code2, GitBranch, Image, LayoutGrid, Boxes, ArrowRight } from 'lucide-react';
+import { ArrowRight, Boxes, Code2, GitBranch, Image, LayoutGrid, Workflow } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Button } from '../components/common/Button';
-import { Badge } from '../components/common/Badge';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -13,7 +12,6 @@ interface Feature {
   id: string;
   title: string;
   description: string;
-  status: 'live' | 'coming-soon';
   icon: typeof LayoutGrid;
 }
 
@@ -21,29 +19,42 @@ const FEATURES: Feature[] = [
   {
     id: 'canvas',
     title: 'Canvas Editor',
-    description: 'Draw UML class diagrams directly on an interactive, pannable canvas.',
-    status: 'live',
+    description:
+      'Draw UML class diagrams and activity diagrams directly on an interactive, pannable canvas.',
     icon: LayoutGrid,
   },
   {
     id: 'image',
-    title: 'Image Upload → UML JSON',
-    description: 'Upload a diagram image and parse it into the editor via computer vision + OCR.',
-    status: 'live',
+    title: 'Image Upload → Diagram',
+    description:
+      'Upload a class or activity diagram image and parse it into the editor via computer vision + OCR.',
     icon: Image,
   },
   {
     id: 'codegen',
     title: 'Code Generation',
-    description: 'Generate Python, Java, or JavaScript source directly from your diagram.',
-    status: 'live',
+    description:
+      'Generate Python, Java, or JavaScript source from a class diagram, or a structured function from an activity diagram.',
     icon: Code2,
   },
   {
     id: 'reverse',
     title: 'Reverse Engineering',
-    description: 'Reconstruct a class diagram or activity diagram from existing source code.',
-    status: 'live',
+    description: 'Reconstruct a class diagram from existing Python, Java, or JavaScript source.',
+    icon: GitBranch,
+  },
+  {
+    id: 'activity-draw',
+    title: 'Activity Diagram Canvas',
+    description:
+      'Draw start, action, decision, fork/join and end nodes, label the guards, and let auto-layout tidy diagrams that arrive from code or an image.',
+    icon: Workflow,
+  },
+  {
+    id: 'activity-code',
+    title: 'Activity ↔ Code',
+    description:
+      'Turn an activity diagram into a function with real if/else and while structure (action bodies stay TODO placeholders), or render the control flow of any method as an activity diagram.',
     icon: GitBranch,
   },
 ];
@@ -52,12 +63,12 @@ const STEPS = [
   {
     title: 'Draw',
     description:
-      'Sketch your class diagram on the infinite canvas — classes, attributes, relationships.',
+      'Sketch a class or activity diagram on the infinite canvas - classes, relationships, actions, decisions.',
   },
   {
     title: 'Generate',
     description:
-      'Export to code in Python, Java, or JavaScript with one click — or upload a source file to reverse it.',
+      'Export to code in Python, Java, or JavaScript with one click - or paste source code to reverse it into a diagram.',
   },
   {
     title: 'Iterate',
@@ -77,9 +88,6 @@ function FeatureCard({ feature, delay }: { feature: Feature; delay: number }) {
       <div className={styles.featureCardHeader}>
         <feature.icon size={18} />
         <span className={styles.featureCardTitle}>{feature.title}</span>
-        <Badge tone={feature.status === 'live' ? 'live' : 'planned'}>
-          {feature.status === 'live' ? 'Live' : 'Coming Soon'}
-        </Badge>
       </div>
       <p className={styles.featureCardDescription}>{feature.description}</p>
     </div>
@@ -148,9 +156,9 @@ export function HomePage() {
             Generate real code. <span className={styles.heroAccent}>Both directions.</span>
           </h1>
           <p className={styles.heroSubtitle}>
-            UMLFrame turns your class diagrams into working Python, Java, or JavaScript source — and
-            reconstructs diagrams from code you already have. One canonical schema powers every
-            pipeline.
+            UMLFrame turns your class and activity diagrams into working Python, Java, or JavaScript
+            source — and reconstructs class diagrams and activity flows from code you already have.
+            One canonical schema powers every pipeline.
           </p>
           <div className={styles.heroActions}>
             {isAuthenticated ? (
@@ -205,9 +213,7 @@ export function HomePage() {
           <Boxes size={16} />
           <span>UMLFrame</span>
         </div>
-        <p className={styles.footerCopy}>
-          © {new Date().getFullYear()} UMLFrame. All rights reserved.
-        </p>
+        <p className={styles.footerCopy}>© {new Date().getFullYear()} UMLFrame.</p>
       </footer>
     </div>
   );
