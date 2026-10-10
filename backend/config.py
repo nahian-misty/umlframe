@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
-DEFAULT_DATABASE_URL = "mysql+pymysql://mistyy@localhost:3306/umlframe"
+DEFAULT_DATABASE_URL = "postgresql+psycopg2://umlframe@localhost:5433/umlframe"
 
 
 def _load_env_file(path: Path) -> None:
