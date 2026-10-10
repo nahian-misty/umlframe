@@ -11,6 +11,24 @@ const THEME_SETTLE_FRAMES = 3;
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
+const FIT_SELECTOR = '[data-export-fit]';
+const MIN_FIT_FONT_PX = 7;
+
+function fitRowsToBoxes(root: HTMLElement): () => void {
+  const restore: Array<() => void> = [];
+  root.querySelectorAll<HTMLElement>(FIT_SELECTOR).forEach((row) => {
+    if (row.scrollWidth <= row.clientWidth) return;
+    const original = row.style.fontSize;
+    const current = parseFloat(getComputedStyle(row).fontSize);
+    const fitted = Math.max(MIN_FIT_FONT_PX, (current * row.clientWidth) / row.scrollWidth);
+    row.style.fontSize = `${Math.floor(fitted * 10) / 10}px`;
+    restore.push(() => {
+      row.style.fontSize = original;
+    });
+  });
+  return () => restore.forEach((undo) => undo());
+}
+
 /** Runs `task` with the light palette forced on, restoring the user's theme afterwards. */
 async function withLightTheme<T>(task: () => Promise<T>): Promise<T> {
   const root = document.documentElement;
@@ -117,6 +135,7 @@ export async function exportCanvasAsPng(
     -bounds.y + PNG_EXPORT_PADDING
   }px) scale(1)`;
 
+  const unfit = fitRowsToBoxes(contentNode);
   try {
     const dataUrl = await withLightTheme(() =>
       toPng(contentNode, {
@@ -128,6 +147,7 @@ export async function exportCanvasAsPng(
     );
     downloadDataUrl(await flattenOnWhite(dataUrl), filename);
   } finally {
+    unfit();
     contentNode.style.transform = originalTransform;
   }
 }

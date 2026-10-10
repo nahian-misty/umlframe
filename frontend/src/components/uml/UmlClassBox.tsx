@@ -140,7 +140,7 @@ export function UmlClassBox({
             onDelete={() => deleteAttribute(attribute.id)}
           />
         ))}
-        <button className={styles.addRow} onClick={addAttribute} type="button">
+        <button className={styles.addRow} data-export-hide onClick={addAttribute} type="button">
           + attribute
         </button>
       </div>
@@ -155,7 +155,7 @@ export function UmlClassBox({
             onDelete={() => deleteMethod(method.id)}
           />
         ))}
-        <button className={styles.addRow} onClick={addMethod} type="button">
+        <button className={styles.addRow} data-export-hide onClick={addMethod} type="button">
           + method
         </button>
       </div>

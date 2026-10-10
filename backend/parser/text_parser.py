@@ -33,8 +33,11 @@ _OCR_IDENTIFIER_FIXES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?<=[a-z])ln(?=[A-Z])"), "In"),
 ]
 
+_LEADING_QUOTE = re.compile(r"^[\"']\s*(?=[A-Za-z_])")
 _STEREOTYPE_BRACKETS = "<>«»{}[]()"
 _STEREOTYPE_WORDS = {"interface": "interface", "abstract": "abstract"}
+_PLAIN_STEREOTYPE = "class"
+_PLACEHOLDER_ROWS = frozenset({"attribute", "method"})
 
 
 @dataclass
@@ -95,6 +98,8 @@ def _stereotype_in(line: str) -> str | None:
     for word, stereotype in _STEREOTYPE_WORDS.items():
         if word in lowered:
             return stereotype
+    if _PLAIN_STEREOTYPE in lowered:
+        return _PLAIN_STEREOTYPE
     return None
 
 
@@ -131,6 +136,8 @@ def parse_attribute_line(line: str) -> ParsedAttribute | None:
         return None
 
     visibility, line = _strip_visibility(line)
+    if line.lower() in _PLACEHOLDER_ROWS:
+        return None
 
     default_value: str | None = None
     if "=" in line:
@@ -171,6 +178,8 @@ def parse_method_line(line: str) -> ParsedMethod | None:
         return None
 
     visibility, line = _strip_visibility(line)
+    if line.lower() in _PLACEHOLDER_ROWS:
+        return None
 
     paren_open = line.find("(")
     paren_close = line.rfind(")")
@@ -181,19 +190,20 @@ def parse_method_line(line: str) -> ParsedMethod | None:
     if not _valid_identifier(name):
         return None
 
-    param_str = line[paren_open + 1 : paren_close] if paren_close > paren_open else ""
-    after_paren = line[paren_close + 1 :].strip() if paren_close != -1 else ""
+    truncated = paren_close < paren_open
+    param_str = line[paren_open + 1 : paren_close] if not truncated else line[paren_open + 1 :]
+    after_paren = line[paren_close + 1 :].strip() if not truncated else ""
 
     return_type = "void"
     if after_paren.startswith(":"):
         return_type = _clean_type(after_paren[1:]) or "void"
-        if not _is_type_name(return_type):
+        if not _is_type_name(return_type) or return_type.endswith("."):
             return_type = "void"  # ": 5" is not a type; guessing one would be invention
 
     return ParsedMethod(
         name=name,
         visibility=visibility,
-        parameters=_parse_parameters(param_str),
+        parameters=_parse_parameters(_drop_truncated_tail(param_str) if truncated else param_str),
         return_type=return_type,
     )
 
@@ -216,7 +226,9 @@ def _fix_identifier(name: str) -> str:
     return name
 
 
-_TYPE_TOKEN = re.compile(r"^[A-Za-z_][\w.]*(<[\w., ?<>]*>)?(\[\])*$")
+_TYPE_TOKEN = re.compile(
+    r"^[A-Za-z_][\w.]*(<[\w., ?<>]*>|\[[A-Za-z_][\w., ?\[\]]*\])?(\[\])*$"
+)
 
 
 def _is_type_name(datatype: str) -> bool:
@@ -242,9 +254,16 @@ def _clean_type(datatype: str) -> str:
 
 
 def _strip_visibility(line: str) -> tuple[str, str]:
+    line = _LEADING_QUOTE.sub("-", line)
     if line and line[0] in _VISIBILITY_PREFIX:
         return _VISIBILITY_PREFIX[line[0]], line[1:].strip()
     return "public", line
+
+
+def _drop_truncated_tail(param_str: str) -> str:
+    """A signature cut off by an ellipsis ("findBook(title: String...") ends in a parameter
+    whose type may be incomplete: that last parameter is dropped rather than guessed."""
+    return param_str.rpartition(",")[0]
 
 
 def _parse_parameters(param_str: str) -> list[ParsedParameter]:

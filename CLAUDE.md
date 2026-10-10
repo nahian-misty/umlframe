@@ -60,6 +60,16 @@ Checked against real diagrams from other tools (`tests/fixtures/class_diagrams/u
 - **Class kind** (`kind` on `UmlClass`): added to `backend/schemas/uml.py`, `shared/schema/uml_schema.json`, the frontend types/serializer and `UmlClassBox` (a selector shows `«class»`/`«abstract»`/`«interface»` at the top of the box), Mermaid, all three code generators, and the Python/Java reverse parsers (Java interfaces and `implements` are no longer discarded).
 - **Activity images**: connectors interrupted by captions are bridged back together (`activity_shape_detector`), edge direction uses drawn-line distance from START instead of hop count, and guards ("yes"/"no") written over a line are read.
 
+### Editor export → re-import (2026-10-10)
+
+The editor's own PNG now re-imports as drawn (regression fixture `tests/fixtures/class_diagrams/editor_export_library.png`, `test_editor_export_comes_back_as_drawn`).
+
+- **Scale:** export is `PNG_EXPORT_PIXEL_RATIO` (2) pixels per canvas unit; the backend still returns image pixels, and `frontend/src/api/imageApi.ts` divides by the ratio on upload. Images from other tools are treated the same way (a known approximation).
+- **Export content:** the `+ attribute` / `+ method` buttons carry `data-export-hide` and are hidden under `html.export-light`, so they are not read back as members; member rows that overflow their box are shrunk to fit for the export (`fitRowsToBoxes`, `data-export-fit`) instead of being cut with `…`. A signature that is still cut off drops its incomplete last parameter and keeps no guessed return type.
+- **Parser:** `«class»` is a recognised stereotype (default kind), a leading curly quote is a `-`, `List[Book]` is a type, and the placeholder rows are skipped.
+- **Crossing connectors:** `backend/cv/connector_tracer.py` splits a connector blob that touches three or more boxes into its individual lines by walking each from its box (straight through crossings, turning at corners, across dash gaps) and pairing walks that reach each other. A shared bus (one closed marker on one box, no other arrowheads) or a split that yields an unmarked line is left to the old hub logic. Dashed-ness of a traced elbow line comes from the walk (gaps crossed), not from the straight-line test.
+- **Known limits:** diagonal connectors in a fused group are not traced (fall back to the hub logic); the font-fit export is not browser-verified in this environment.
+
 ### Working tree state (as of 2026-09-08)
 
 All nine roadmap milestones (M1–M9) are now implemented. **None of it is committed** — `git status` on `main` shows the entire body of work (the M1/M2/M4 enhancement threads, the full M5 reverse-engineering track, both halves of M6, M7 integration, and the full M9 forward pipeline) as pending changes. The user handles commits.
@@ -137,6 +147,7 @@ umlframe/
 │   ├── cv/                    # OpenCV image preprocessing + shape detection
 │   │   ├── preprocessor.py
 │   │   ├── shape_detector.py
+│   │   ├── connector_tracer.py          # Splits fused, crossing connector ink into individual lines
 │   │   └── activity_shape_detector.py   # Detects start/end/action/decision/bar shapes + connector line segments; reuses preprocessor.py as-is
 │   ├── ocr/                   # OCR execution scoped to detected bounding boxes
 │   │   ├── extractor.py

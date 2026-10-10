@@ -138,3 +138,31 @@ def test_two_compartment_box_keeps_its_members_as_methods() -> None:
 
     assert drawable.attributes == []
     assert [m.name for m in drawable.methods] == ["redraw", "hide"]
+
+
+def test_editor_export_comes_back_as_drawn() -> None:
+    """The editor's own PNG (2x pixel ratio, elbow connectors that cross, placeholder rows
+    hidden) must re-import with every class name, member and relationship type intact."""
+    document = _document("editor_export_library.png")
+
+    assert sorted(c.name for c in document.classes) == [
+        "Book", "Catalog", "Library", "LibrarySystem", "Loan",
+        "LoanService", "Member", "NotificationService", "Person",
+    ]  # fmt: skip
+    book = _class(document, "Book")
+    assert [(a.name, a.datatype) for a in book.attributes] == [
+        ("title", "String"), ("author", "String"), ("available", "bool"),
+    ]  # fmt: skip
+    assert _class(document, "Catalog").attributes[0].datatype == "List[Book]"
+    assert _edges(document) == {
+        ("Member", "inheritance", "Person"),
+        ("Catalog", "aggregation", "Book"),
+        ("Member", "aggregation", "Loan"),
+        ("Library", "composition", "Catalog"),
+        ("Loan", "association", "Member"),
+        ("Loan", "association", "Book"),
+        ("LoanService", "dependency", "Book"),
+        ("LoanService", "dependency", "Member"),
+        ("LoanService", "dependency", "Loan"),
+        ("LoanService", "dependency", "NotificationService"),
+    }

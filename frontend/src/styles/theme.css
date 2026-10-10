@@ -127,3 +127,7 @@ html.export-light:root[data-theme='light'] {
   --color-selection: #4f46e5;
   --color-selection-bg: rgba(79, 70, 229, 0.08);
 }
+
+html.export-light [data-export-hide] {
+  display: none;
+}

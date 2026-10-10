@@ -258,3 +258,46 @@ def test_a_return_type_that_is_not_a_type_falls_back_to_void():
     result = parse_method_line("+ numSeats() : 5")
     assert result is not None
     assert result.return_type == "void"
+
+
+def test_class_stereotype_line_is_not_taken_for_the_name():
+    assert parse_class_header("«class»\nBook") == ("Book", "class")
+    assert parse_class_name("«class»\nBook") == "Book"
+
+
+def test_interface_stereotype_still_marks_an_interface():
+    assert parse_class_header("«interface»\nShape") == ("Shape", "interface")
+
+
+def test_attribute_minus_read_as_a_curly_quote_is_private():
+    assert parse_attribute_line("“author: String") == ParsedAttribute(
+        name="author", datatype="String", visibility="private"
+    )
+
+
+def test_bracket_generic_type_is_kept_as_a_type():
+    parsed = parse_attribute_line("-books: List[Book]")
+
+    assert parsed is not None
+    assert (parsed.datatype, parsed.default_value) == ("List[Book]", None)
+
+
+@pytest.mark.parametrize("line", ["+ attribute", "+ method"])
+def test_editor_placeholder_rows_are_not_members(line):
+    assert parse_attribute_line(line) is None
+    assert parse_method_line(line) is None
+
+
+def test_method_cut_off_by_an_ellipsis_keeps_no_guessed_type():
+    parsed = parse_method_line("+addBook(book: Book): v..")
+
+    assert parsed is not None
+    assert parsed.return_type == "void"
+    assert [p.name for p in parsed.parameters] == ["book"]
+
+
+def test_signature_cut_off_before_its_closing_paren_drops_the_incomplete_parameter():
+    parsed = parse_method_line("+borrow(member: Member, book: Bo...")
+
+    assert parsed is not None
+    assert [p.name for p in parsed.parameters] == ["member"]

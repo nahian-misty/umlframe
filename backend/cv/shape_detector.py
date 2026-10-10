@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from backend.cv.connector_tracer import Rect, TracedLine, split_crossing_group
+
 # A compartment is at least this tall (px) between its two rules.
 MIN_COMPARTMENT_HEIGHT = 8
 
@@ -31,6 +33,7 @@ BOX_ERASE_MARGIN = 1
 # Pieces of ink closer than this belong to one connector (the gap between dashes).
 DASH_BRIDGE = 13
 MIN_CONNECTOR_PIXELS = 20
+MIN_FUSED_ANCHORS = 3
 # A connector group touches a box when it comes this close to its border.
 TOUCH_DISTANCE = 8
 # Ink this close to the touching point decides which way the connector leaves the box.
@@ -60,6 +63,7 @@ SPLAY_GAP = 9
 SPLAY_RADIUS = 30
 MIN_SPLAY_PIXELS = 8
 SPLAY_RATIO = 0.25
+LARGE_GLYPH_AREA = 300
 
 # Gap (px) closed in a glyph outline before it is filled in, within SEAL_REACH px
 # of a box (where erasing the box opens the outline).
@@ -293,27 +297,81 @@ def _detect_relationship_lines(
     lines: list[RelationshipLine] = []
     claimed = np.zeros_like(ink)
     near_boxes = _near_boxes(ink.shape, boxes)
+    rects = [(box.x, box.y, box.w, box.h) for box in boxes]
     for group in range(1, count):
-        mask = np.where((groups == group) & (ink > 0), 255, 0).astype(np.uint8)
-        if int(np.count_nonzero(mask)) < MIN_CONNECTOR_PIXELS:
+        group_mask = np.where((groups == group) & (ink > 0), 255, 0).astype(np.uint8)
+        if int(np.count_nonzero(group_mask)) < MIN_CONNECTOR_PIXELS:
             continue
-        anchors = _anchors(mask, boxes)
-        if len(anchors) < 2:
-            continue
-        if len(anchors) == 2:
-            _orient_straight(anchors, mask)
-        closed = _closed_markers(mask, anchors, boxes, near_boxes)
-        for index, anchor in enumerate(anchors):
-            anchor.marker = closed.get(index)
-            if anchor.marker is None:
-                piece = _own_piece(mask, anchor)
-                if _has_open_arrowhead(piece, anchor):
-                    anchor.marker = "arrow-open"
-        new_lines = _lines_for(anchors, mask, gray)
-        lines.extend(new_lines)
-        claimed |= mask if any(line.dashed for line in new_lines) else _connector_ink(mask, anchors)
+        for traced in _split_fused(group_mask, boxes, rects, near_boxes):
+            lines.extend(_lines_in_group(traced, boxes, near_boxes, gray, claimed))
     _attach_end_labels(lines, np.where(claimed > 0, 0, ink).astype(np.uint8))
     return lines
+
+
+def _split_fused(
+    mask: np.ndarray, boxes: list[ClassBox], rects: list[Rect], near_boxes: np.ndarray
+) -> list[TracedLine]:
+    """The individual lines of a group, when it touches enough boxes to be several lines
+    crossing each other; otherwise the group itself."""
+    anchors = _anchors(mask, boxes)
+    if len(anchors) < MIN_FUSED_ANCHORS or _is_shared_bus(mask, anchors, boxes, near_boxes):
+        return [TracedLine(mask, dashed=None)]
+    split = split_crossing_group(mask, _fill_closed_shapes(mask, near_boxes), rects)
+    if split and all(_is_marked_line(line.mask, boxes, near_boxes) for line in split):
+        return split
+    return [TracedLine(mask, dashed=None)]
+
+
+def _mark_anchors(
+    mask: np.ndarray, anchors: list[_Anchor], boxes: list[ClassBox], near_boxes: np.ndarray
+) -> None:
+    """Set each anchor's end marker: a closed glyph, an open arrowhead, or none."""
+    closed = _closed_markers(mask, anchors, boxes, near_boxes)
+    for index, anchor in enumerate(anchors):
+        anchor.marker = closed.get(index)
+        if anchor.marker is None and _has_open_arrowhead(_own_piece(mask, anchor), anchor):
+            anchor.marker = "arrow-open"
+
+
+def _is_marked_line(mask: np.ndarray, boxes: list[ClassBox], near_boxes: np.ndarray) -> bool:
+    """Whether a traced line joins two boxes and has a marker at one end. The editor draws
+    every relationship with one, so an unmarked "line" is a bus bar run between two
+    children, not a relationship."""
+    anchors = _anchors(mask, boxes)
+    if len(anchors) != 2:
+        return False
+    _mark_anchors(mask, anchors, boxes, near_boxes)
+    return any(anchor.marker for anchor in anchors)
+
+
+def _is_shared_bus(
+    mask: np.ndarray, anchors: list[_Anchor], boxes: list[ClassBox], near_boxes: np.ndarray
+) -> bool:
+    """One box carries the group's only marker and no other end has an arrowhead: the
+    children of a generalisation drawn off a single shared bar. Crossing lines, by
+    contrast, each bring a marker of their own."""
+    if len(_closed_markers(mask, anchors, boxes, near_boxes)) != 1:
+        return False
+    return not any(_has_open_arrowhead(_own_piece(mask, anchor), anchor) for anchor in anchors)
+
+
+def _lines_in_group(
+    traced: TracedLine,
+    boxes: list[ClassBox],
+    near_boxes: np.ndarray,
+    gray: np.ndarray | None,
+    claimed: np.ndarray,
+) -> list[RelationshipLine]:
+    mask = traced.mask
+    anchors = _anchors(mask, boxes)
+    if len(anchors) < 2:
+        return []
+    if len(anchors) == 2:
+        _orient_straight(anchors, mask)
+    _mark_anchors(mask, anchors, boxes, near_boxes)
+    new_lines = _lines_for(anchors, mask, gray, traced.dashed)
+    claimed |= mask if any(line.dashed for line in new_lines) else _connector_ink(mask, anchors)
+    return new_lines
 
 
 def _connector_ink(mask: np.ndarray, anchors: list[_Anchor]) -> np.ndarray:
@@ -464,7 +522,7 @@ def _closed_markers(
             continue
         ys, xs = np.nonzero(blob)
         hollow = _is_hollow(mask, filled, xs, ys)
-        if not hollow and _has_splayed_arms(mask, blob):
+        if not hollow and xs.size < LARGE_GLYPH_AREA and _has_splayed_arms(mask, blob):
             continue  # the core of a heavy open arrowhead, not a solid diamond
         if shape == "triangle" and not hollow:
             # No drawn triangle is solid (inheritance is hollow): a solid one is a
@@ -589,13 +647,14 @@ def _line_width(filled_runs: list[int]) -> int:
 
 
 def _lines_for(
-    anchors: list[_Anchor], mask: np.ndarray, gray: np.ndarray | None
+    anchors: list[_Anchor], mask: np.ndarray, gray: np.ndarray | None, dashed: bool | None = None
 ) -> list[RelationshipLine]:
     """One RelationshipLine per spoke: the whole group when it joins two boxes, or
     from the hub (the end carrying a marker) out to each other box."""
     if len(anchors) == 2:
         a, b = anchors
-        return [_line(a, b, dashed=_is_dashed(mask, a, b, gray))]
+        known = _is_dashed(mask, a, b, gray) if dashed is None else dashed
+        return [_line(a, b, dashed=known)]
     hub = next((a for a in anchors if a.marker not in (None, "arrow-open")), None)
     if hub is None:
         hub = anchors[0]
